@@ -1,25 +1,45 @@
 {
   "expo": {
-    "name": "spendnot",
+    "name": "SPENDNOT",
     "slug": "spendnot",
-    "version": "1.0.0",
+    "version": "0.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "spendnot",
     "userInterfaceStyle": "light",
+    "sdkVersion": "52.0.0",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F9F6E5"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.spendnot.app",
+      "buildNumber": "1",
+      "usesAppleSignIn": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "monochromeImage": "./assets/android-icon-monochrome.png",
+        "backgroundColor": "#f2f2f2"
       },
-      "predictiveBackGestureEnabled": false
+      "package": "com.spendnot.app",
+      "versionCode": 1
     },
     "web": {
+      "bundler": "metro",
+      "output": "static",
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-apple-authentication"
+    ],
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }

@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helper functions ──────────────────────
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    function isValidAmount() {
+      return request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.amount < 10000000; // 1 crore max
+    }
+
+    // ── users/{uid} ───────────────────────────
+    match /users/{uid} {
+      allow read: if isOwner(uid);
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasAll(['displayName', 'email', 'currency', 'createdAt'])
+        && request.resource.data.currency == 'INR';
+      allow update: if isOwner(uid)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'email', 'createdAt']);
+      allow delete: if false;
+    }
+
+    // ── wallets/{walletId} ────────────────────
+    match /wallets/{walletId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'name', 'type', 'balance', 'isDefault', 'createdAt'])
+        && request.resource.data.balance >= 0;
+      allow update: if isOwner(resource.data.uid)
+        && isOwner(request.resource.data.uid)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'createdAt']);
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    // ── expenses/{expenseId} ──────────────────
+    match /expenses/{expenseId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'walletId', 'type', 'category', 'amount', 'date', 'createdAt'])
+        && isValidAmount()
+        && request.resource.data.type in ['expense', 'income'];
+      allow update: if false; // Expenses are immutable; delete and re-create instead
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    // ── budgets/{budgetId} ────────────────────
+    match /budgets/{budgetId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'category', 'limit', 'period', 'startDate'])
+        && request.resource.data.limit > 0
+        && request.resource.data.period in ['weekly', 'monthly'];
+      allow update: if isOwner(resource.data.uid) && isOwner(request.resource.data.uid);
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    // ── recurring/{recurringId} ───────────────
+    match /recurring/{recurringId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'name', 'walletId', 'amount', 'frequency', 'nextDueDate', 'isAutoDeduct'])
+        && isValidAmount()
+        && request.resource.data.frequency in ['weekly', 'monthly', 'yearly'];
+      allow update: if isOwner(resource.data.uid) && isOwner(request.resource.data.uid);
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    // Block all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
