@@ -16,8 +16,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.spendnot.app",
-      "buildNumber": "1",
-      "usesAppleSignIn": true
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -35,8 +34,7 @@
     },
     "plugins": [
       "expo-router",
-      "expo-font",
-      "expo-apple-authentication"
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
