@@ -1,15 +1,15 @@
-// ─────────────────────────────────────────────
-//  SPENDNOT — Reports Screen (Screen 7)
-//  app/(tabs)/reports.tsx
-// ─────────────────────────────────────────────
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Dimensions,
+  StyleSheet, ActivityIndicator, Dimensions, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Polyline, Circle, Line, Polygon, Text as SvgText } from 'react-native-svg';
+import { router } from 'expo-router';
+import Svg, { Polyline, Circle, Line, Polygon } from 'react-native-svg';
+import { doc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { useExpenses } from '../../hooks/useExpenses';
+import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
   CATEGORIES, getCategoryDef, CategoryKey,
@@ -129,6 +129,41 @@ export default function ReportsScreen() {
     }
   };
 
+  const handleDelete = (id: string, walletId: string, amount: number, type: string) => {
+    Alert.alert(
+      'Delete entry',
+      'Are you sure you want to delete this transaction? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, 'expenses', id));
+              // Reverse wallet balance
+              const delta = type === 'expense' ? amount : -amount;
+              await updateDoc(doc(db, 'wallets', walletId), { balance: increment(delta) });
+              Toast.show({ type: 'success', text1: 'Deleted' });
+            } catch (e: any) {
+              Toast.show({ type: 'error', text1: 'Error', text2: e.message });
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // All entries (not just expenses)
+  const allFiltered = useMemo(() => {
+    if (period === 'week') {
+      const start = new Date(now); start.setDate(now.getDate() - 6);
+      return expenses.filter((e) => e.date.toDate() >= start);
+    }
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return expenses.filter((e) => e.date.toDate() >= start);
+  }, [expenses, period]);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
@@ -220,6 +255,44 @@ export default function ReportsScreen() {
               <Text style={styles.emptyEmoji}>📊</Text>
               <Text style={styles.emptyTitle}>No data yet</Text>
               <Text style={styles.emptyText}>Log some expenses to see reports here.</Text>
+            </View>
+          )}
+
+          {/* All Entries */}
+          {allFiltered.length > 0 && (
+            <View style={styles.chartCard}>
+              <Text style={styles.chartTitle}>All Entries</Text>
+              {allFiltered.map((e) => {
+                const cat = getCategoryDef(e.category);
+                const isExp = e.type === 'expense';
+                const dateStr = e.date.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                return (
+                  <View key={e.id} style={styles.entryRow}>
+                    <View style={styles.entryIcon}>
+                      <Text style={styles.entryEmoji}>{cat.emoji}</Text>
+                    </View>
+                    <View style={styles.entryInfo}>
+                      <Text style={styles.entryCat}>{cat.label}</Text>
+                      <Text style={styles.entryDate}>{dateStr}{e.note ? ` · ${e.note}` : ''}</Text>
+                    </View>
+                    <Text style={[styles.entryAmount, { color: isExp ? Colors.expense : Colors.income }]}>
+                      {isExp ? '−' : '+'}₹{e.amount.toLocaleString('en-IN')}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.entryAction}
+                      onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any)}
+                    >
+                      <Text style={styles.entryActionText}>✏️</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.entryAction}
+                      onPress={() => handleDelete(e.id, e.walletId, e.amount, e.type)}
+                    >
+                      <Text style={styles.entryActionText}>🗑️</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
             </View>
           )}
         </ScrollView>
@@ -321,12 +394,28 @@ const styles = StyleSheet.create({
   },
   emptyBox: { alignItems: 'center', paddingVertical: Spacing['4xl'] },
   emptyEmoji: { fontSize: 48, marginBottom: Spacing.base },
-  emptyTitle: {
-    ...Typography.bodyBold, fontSize: FontSize.xl,
-    color: Colors.carbonBlack, marginBottom: Spacing.sm,
+  emptyTitle: { ...Typography.bodyBold, fontSize: FontSize.xl, color: Colors.carbonBlack, marginBottom: Spacing.sm },
+  emptyText: { ...Typography.body, fontSize: FontSize.base, color: Colors.mutedStone, textAlign: 'center' },
+  // Entry rows
+  entryRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: Spacing.sm, gap: Spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: Colors.ghostGray,
   },
-  emptyText: {
-    ...Typography.body, fontSize: FontSize.base,
-    color: Colors.mutedStone, textAlign: 'center',
+  entryIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: Colors.ghostGray,
+    alignItems: 'center', justifyContent: 'center',
   },
+  entryEmoji: { fontSize: 18 },
+  entryInfo: { flex: 1 },
+  entryCat: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.carbonBlack },
+  entryDate: { ...Typography.body, fontSize: FontSize.xs, color: Colors.mutedStone },
+  entryAmount: { ...Typography.bodyBold, fontSize: FontSize.sm },
+  entryAction: {
+    width: 32, height: 32, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.ghostGray,
+  },
+  entryActionText: { fontSize: 14 },
 });

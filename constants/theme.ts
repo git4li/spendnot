@@ -114,18 +114,10 @@ export const WalletColors: Record<WalletType, { bg: string; text: string }> = {
 };
 
 // Category definitions
-export type CategoryKey =
-  | 'food'
-  | 'transport'
-  | 'shopping'
-  | 'bills'
-  | 'health'
-  | 'entertainment'
-  | 'education'
-  | 'other';
+export type CategoryKey = string;
 
 export interface CategoryDef {
-  key: CategoryKey;
+  key: string;
   label: string;
   emoji: string;
 }
@@ -141,5 +133,13 @@ export const CATEGORIES: CategoryDef[] = [
   { key: 'other', label: 'Other', emoji: '📦' },
 ];
 
-export const getCategoryDef = (key: CategoryKey): CategoryDef =>
-  CATEGORIES.find((c) => c.key === key) ?? CATEGORIES[CATEGORIES.length - 1];
+export const getCategoryDef = (key: string): CategoryDef => {
+  const found = CATEGORIES.find((c) => c.key === key);
+  if (found) return found;
+  // Custom categories stored as "emoji:label"
+  if (key.includes(':')) {
+    const [emoji, ...rest] = key.split(':');
+    return { key, label: rest.join(':'), emoji };
+  }
+  return CATEGORIES[CATEGORIES.length - 1];
+};

@@ -7,7 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useFonts, Montserrat_900Black } from '@expo-google-fonts/montserrat';
 import { Inter_400Regular, Inter_500Medium, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Platform } from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
 import { Colors } from '../constants/theme';
 import { doc, getDoc } from 'firebase/firestore';
@@ -68,6 +68,16 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
+  // Inject Google Fonts CSS on web as a fallback
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Montserrat:wght@900&display=swap';
+      document.head.appendChild(link);
+    }
+  }, []);
+
   if (!fontsLoaded) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.canvasIce }}>
@@ -88,6 +98,10 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen
                 name="modals/add-expense"
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+              />
+              <Stack.Screen
+                name="modals/edit-expense"
                 options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
               />
               <Stack.Screen

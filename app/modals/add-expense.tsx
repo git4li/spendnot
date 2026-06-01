@@ -1,12 +1,12 @@
 // ─────────────────────────────────────────────
-//  SPENDNOT — Add Expense / Income Modal (Screen 4)
+//  SPENDNOT — Add Expense / Income Modal
 //  app/modals/add-expense.tsx
 // ─────────────────────────────────────────────
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
-  Keyboard, TouchableWithoutFeedback, Platform,
+  Keyboard, TouchableWithoutFeedback, Modal, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -17,7 +17,7 @@ import { auth, db } from '../../lib/firebase';
 import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  CATEGORIES, CategoryKey, WalletColors,
+  CATEGORIES, CategoryDef, WalletColors,
 } from '../../constants/theme';
 import { TransactionType } from '../../types/models';
 import * as Haptics from 'expo-haptics';
@@ -26,27 +26,48 @@ import Toast from 'react-native-toast-message';
 export default function AddExpenseModal() {
   const { wallets } = useWallets();
   const { bottom } = useSafeAreaInsets();
+
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('');
   const [walletId, setWalletId] = useState<string>(
     wallets.find((w) => w.isDefault)?.id ?? wallets[0]?.id ?? '',
   );
-  const [category, setCategory] = useState<CategoryKey>('food');
+  const [category, setCategory] = useState<string>('food');
   const [note, setNote] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Custom category state
+  const [customCategories, setCustomCategories] = useState<CategoryDef[]>([]);
+  const [showAddCat, setShowAddCat] = useState(false);
+  const [newEmoji, setNewEmoji] = useState('');
+  const [newLabel, setNewLabel] = useState('');
+
+  const allCategories = [...CATEGORIES, ...customCategories];
+
   const user = auth.currentUser!;
+
+  const handleAddCustomCategory = () => {
+    const emoji = newEmoji.trim() || '⭐';
+    const label = newLabel.trim();
+    if (!label) { Alert.alert('Name required', 'Please enter a category name.'); return; }
+    const key = `${emoji}:${label}`;
+    const newCat: CategoryDef = { key, label, emoji };
+    setCustomCategories((prev) => [...prev, newCat]);
+    setCategory(key);
+    setNewEmoji('');
+    setNewLabel('');
+    setShowAddCat(false);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  };
 
   const handleSave = async () => {
     const amt = parseFloat(amount.replace(/,/g, ''));
     if (!amt || amt <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid amount.');
-      return;
+      Alert.alert('Invalid amount', 'Please enter a valid amount.'); return;
     }
     if (!walletId) {
-      Alert.alert('No wallet', 'Please select a wallet.');
-      return;
+      Alert.alert('No wallet', 'Please select a wallet.'); return;
     }
 
     setSaving(true);
@@ -63,7 +84,6 @@ export default function AddExpenseModal() {
         createdAt: Timestamp.now(),
       });
 
-      // Update wallet balance
       const delta = type === 'expense' ? -amt : amt;
       await updateDoc(doc(db, 'wallets', walletId), {
         balance: increment(delta),
@@ -90,15 +110,16 @@ export default function AddExpenseModal() {
           {/* Drag handle */}
           <View style={styles.dragHandle} />
 
-          {/* Type toggle */}
-          <View style={styles.typeToggle}>
+          {/* Expense / Income pill selector */}
+          <View style={styles.pillRow}>
             {(['expense', 'income'] as TransactionType[]).map((t) => (
               <TouchableOpacity
                 key={t}
-                style={[styles.typePill, type === t && styles.typePillActive]}
+                style={[styles.pill, type === t && styles.pillActive]}
                 onPress={() => { setType(t); Haptics.selectionAsync(); }}
               >
-                <Text style={[styles.typePillText, type === t && styles.typePillTextActive]}>
+                {type === t && <Text style={styles.pillTick}>✓ </Text>}
+                <Text style={[styles.pillText, type === t && styles.pillTextActive]}>
                   {t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </TouchableOpacity>
@@ -130,19 +151,16 @@ export default function AddExpenseModal() {
               contentContainerStyle={styles.walletPillsRow}
             >
               {wallets.map((w) => {
-                const colors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
                 const selected = walletId === w.id;
                 return (
                   <TouchableOpacity
                     key={w.id}
-                    style={[
-                      styles.walletPill,
-                      { backgroundColor: colors.bg },
-                      selected && styles.walletPillSelected,
-                    ]}
+                    style={[styles.walletPill, { backgroundColor: wColors.bg }, selected && styles.walletPillSelected]}
                     onPress={() => { setWalletId(w.id); Haptics.selectionAsync(); }}
                   >
-                    <Text style={[styles.walletPillText, { color: colors.text }]}>{w.name}</Text>
+                    {selected && <Text style={[styles.walletTick, { color: wColors.text }]}>✓ </Text>}
+                    <Text style={[styles.walletPillText, { color: wColors.text }]}>{w.name}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -151,18 +169,32 @@ export default function AddExpenseModal() {
             {/* Category grid */}
             <Text style={styles.fieldLabel}>Category</Text>
             <View style={styles.catGrid}>
-              {CATEGORIES.map((c) => (
-                <TouchableOpacity
-                  key={c.key}
-                  style={[styles.catCard, category === c.key && styles.catCardActive]}
-                  onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
-                >
-                  <Text style={styles.catEmoji}>{c.emoji}</Text>
-                  <Text style={[styles.catLabel, category === c.key && styles.catLabelActive]}>
-                    {c.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {allCategories.map((c) => {
+                const selected = category === c.key;
+                return (
+                  <TouchableOpacity
+                    key={c.key}
+                    style={[styles.catCard, selected && styles.catCardActive]}
+                    onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
+                  >
+                    {selected && (
+                      <View style={styles.catTick}>
+                        <Text style={styles.catTickText}>✓</Text>
+                      </View>
+                    )}
+                    <Text style={styles.catEmoji}>{c.emoji}</Text>
+                    <Text style={[styles.catLabel, selected && styles.catLabelActive]}>{c.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              {/* Add custom category */}
+              <TouchableOpacity
+                style={[styles.catCard, styles.catCardAdd]}
+                onPress={() => setShowAddCat(true)}
+              >
+                <Text style={styles.catAddPlus}>+</Text>
+                <Text style={styles.catAddLabel}>New</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Note */}
@@ -176,20 +208,25 @@ export default function AddExpenseModal() {
               maxLength={100}
             />
 
-            {/* Recurring toggle */}
-            <View style={styles.toggleRow}>
-              <Text style={styles.toggleLabel}>Mark as recurring</Text>
-              <TouchableOpacity
-                style={[styles.toggle, !isRecurring && styles.toggleOff]}
-                onPress={() => { setIsRecurring(!isRecurring); Haptics.selectionAsync(); }}
-                activeOpacity={0.8}
-              >
-                <View style={[styles.toggleThumb, !isRecurring && styles.toggleThumbOff]} />
-              </TouchableOpacity>
+            {/* Recurring pill selector */}
+            <Text style={styles.fieldLabel}>Frequency</Text>
+            <View style={styles.pillRow}>
+              {[false, true].map((val) => (
+                <TouchableOpacity
+                  key={val ? 'recurring' : 'one-time'}
+                  style={[styles.pill, isRecurring === val && styles.pillActive]}
+                  onPress={() => { setIsRecurring(val); Haptics.selectionAsync(); }}
+                >
+                  {isRecurring === val && <Text style={styles.pillTick}>✓ </Text>}
+                  <Text style={[styles.pillText, isRecurring === val && styles.pillTextActive]}>
+                    {val ? '🔁 Recurring' : '1️⃣ One-time'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </ScrollView>
 
-          {/* Save button — outside ScrollView, above home indicator */}
+          {/* Save button */}
           <TouchableOpacity
             style={[styles.saveBtn, saving && { opacity: 0.6 }, { marginBottom: Math.max(bottom - 8, 8) }]}
             onPress={handleSave}
@@ -206,6 +243,45 @@ export default function AddExpenseModal() {
           </TouchableOpacity>
         </View>
       </TouchableWithoutFeedback>
+
+      {/* Add Custom Category Modal */}
+      <Modal visible={showAddCat} transparent animationType="fade">
+        <TouchableWithoutFeedback onPress={() => { setShowAddCat(false); Keyboard.dismiss(); }}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>New Category</Text>
+                <View style={styles.modalRow}>
+                  <TextInput
+                    style={[styles.modalInput, styles.emojiInput]}
+                    value={newEmoji}
+                    onChangeText={setNewEmoji}
+                    placeholder="😀"
+                    placeholderTextColor={Colors.mutedStone}
+                    maxLength={2}
+                  />
+                  <TextInput
+                    style={[styles.modalInput, { flex: 1 }]}
+                    value={newLabel}
+                    onChangeText={setNewLabel}
+                    placeholder="Category name"
+                    placeholderTextColor={Colors.mutedStone}
+                    maxLength={20}
+                  />
+                </View>
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowAddCat(false)}>
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalAddBtn} onPress={handleAddCustomCategory}>
+                    <Text style={styles.modalAddText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -227,138 +303,110 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: Spacing.lg,
   },
-  typeToggle: {
+  // Pill selectors (expense/income + recurring)
+  pillRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.base },
+  pill: {
+    flex: 1,
     flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.xl,
-  },
-  typePill: {
+    justifyContent: 'center',
+    alignItems: 'center',
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.xl,
+    paddingHorizontal: Spacing.base,
     paddingVertical: 10,
     backgroundColor: Colors.ghostGray,
   },
-  typePillActive: { backgroundColor: Colors.carbonBlack },
-  typePillText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.mutedStone },
-  typePillTextActive: { color: Colors.polarWhite },
-  howMuch: {
-    ...Typography.bodyMedium,
-    fontSize: FontSize.base,
-    color: Colors.mutedStone,
-    marginBottom: Spacing.sm,
-  },
+  pillActive: { backgroundColor: Colors.carbonBlack },
+  pillTick: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
+  pillText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.mutedStone },
+  pillTextActive: { color: Colors.polarWhite },
+  howMuch: { ...Typography.bodyMedium, fontSize: FontSize.base, color: Colors.mutedStone, marginBottom: Spacing.sm },
   amountRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    borderBottomWidth: 2,
-    borderBottomColor: Colors.carbonBlack,
-    paddingBottom: Spacing.md,
-    marginBottom: Spacing.xl,
-    gap: Spacing.xs,
+    flexDirection: 'row', alignItems: 'flex-end',
+    borderBottomWidth: 2, borderBottomColor: Colors.carbonBlack,
+    paddingBottom: Spacing.md, marginBottom: Spacing.xl, gap: Spacing.xs,
   },
-  amountCurrency: {
-    ...Typography.body,
-    fontSize: FontSize['3xl'],
-    color: Colors.mutedStone,
-    paddingBottom: 4,
-  },
+  amountCurrency: { ...Typography.body, fontSize: FontSize['3xl'], color: Colors.mutedStone, paddingBottom: 4 },
   amountInput: {
-    ...Typography.heading,
-    fontSize: FontSize['9xl'],
-    color: Colors.carbonBlack,
-    letterSpacing: -3,
-    flex: 1,
-    padding: 0,
-    lineHeight: undefined,
+    ...Typography.heading, fontSize: FontSize['9xl'],
+    color: Colors.carbonBlack, letterSpacing: -3,
+    flex: 1, padding: 0, lineHeight: undefined,
   },
   fieldLabel: {
-    ...Typography.bodyBold,
-    fontSize: FontSize.base,
-    color: Colors.carbonBlack,
-    marginBottom: Spacing.sm,
-    marginTop: Spacing.xs,
+    ...Typography.bodyBold, fontSize: FontSize.base,
+    color: Colors.carbonBlack, marginBottom: Spacing.sm, marginTop: Spacing.xs,
   },
-  walletPillsRow: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
+  // Wallet
+  walletPillsRow: { gap: Spacing.sm, marginBottom: Spacing.lg },
   walletPill: {
+    flexDirection: 'row', alignItems: 'center',
     borderRadius: Radius.full,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: 9,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    paddingHorizontal: Spacing.base, paddingVertical: 9,
+    borderWidth: 2, borderColor: 'transparent',
   },
   walletPillSelected: { borderColor: Colors.carbonBlack },
+  walletTick: { ...Typography.bodyBold, fontSize: FontSize.sm },
   walletPillText: { ...Typography.bodyBold, fontSize: FontSize.sm },
-  catGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
+  // Category grid
+  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg },
   catCard: {
     backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.lg,
-    padding: Spacing.md,
-    alignItems: 'center',
-    width: '22%',
-    aspectRatio: 1,
-    justifyContent: 'center',
-    gap: 4,
+    borderRadius: Radius.lg, padding: Spacing.md,
+    alignItems: 'center', width: '22%', aspectRatio: 1,
+    justifyContent: 'center', gap: 4,
+    overflow: 'hidden',
   },
   catCardActive: { backgroundColor: Colors.carbonBlack },
+  catCardAdd: { backgroundColor: Colors.ghostGray, borderWidth: 1.5, borderColor: Colors.mutedStone, borderStyle: 'dashed' },
+  catTick: {
+    position: 'absolute', top: 4, right: 4,
+    width: 14, height: 14, borderRadius: 7,
+    backgroundColor: Colors.lilacPink,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  catTickText: { fontSize: 8, color: Colors.carbonBlack, fontWeight: '700' },
   catEmoji: { fontSize: 20 },
-  catLabel: {
-    ...Typography.bodyMedium,
-    fontSize: 10,
-    color: Colors.carbonBlack,
-    textAlign: 'center',
-  },
+  catLabel: { ...Typography.bodyMedium, fontSize: 10, color: Colors.carbonBlack, textAlign: 'center' },
   catLabelActive: { color: Colors.polarWhite },
+  catAddPlus: { fontSize: 22, color: Colors.mutedStone },
+  catAddLabel: { ...Typography.bodyMedium, fontSize: 10, color: Colors.mutedStone },
   noteInput: {
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: 12,
-    ...Typography.bodyMedium,
-    fontSize: FontSize.base,
-    color: Colors.carbonBlack,
-    marginBottom: Spacing.base,
+    backgroundColor: Colors.ghostGray, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.base, paddingVertical: 12,
+    ...Typography.bodyMedium, fontSize: FontSize.base,
+    color: Colors.carbonBlack, marginBottom: Spacing.base,
   },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: Spacing.base,
-    borderTopWidth: 1,
-    borderTopColor: Colors.ghostGray,
-    marginBottom: Spacing.base,
-  },
-  toggleLabel: { ...Typography.bodyMedium, fontSize: FontSize.base, color: Colors.carbonBlack },
-  toggle: {
-    width: 48, height: 28,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.carbonBlack,
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  toggleOff: { backgroundColor: Colors.ghostGray },
-  toggleThumb: {
-    width: 22, height: 22,
-    borderRadius: 11,
-    backgroundColor: Colors.polarWhite,
-    alignSelf: 'flex-end',
-  },
-  toggleThumbOff: { alignSelf: 'flex-start' },
   saveBtn: {
-    backgroundColor: Colors.carbonBlack,
-    borderRadius: Radius.full,
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.sm,
+    backgroundColor: Colors.carbonBlack, borderRadius: Radius.full,
+    height: 56, alignItems: 'center', justifyContent: 'center',
+    marginTop: Spacing.sm, marginBottom: Spacing.sm,
   },
   saveBtnText: { ...Typography.bodyBold, fontSize: FontSize.lg, color: Colors.polarWhite },
+  // Custom category modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center', justifyContent: 'center', padding: Spacing.xl,
+  },
+  modalCard: {
+    backgroundColor: Colors.polarWhite, borderRadius: Radius['2xl'],
+    padding: Spacing.xl, width: '100%', maxWidth: 380, gap: Spacing.base,
+  },
+  modalTitle: { ...Typography.bodyBold, fontSize: FontSize.xl, color: Colors.carbonBlack },
+  modalRow: { flexDirection: 'row', gap: Spacing.sm },
+  modalInput: {
+    backgroundColor: Colors.ghostGray, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.base, paddingVertical: 12,
+    ...Typography.bodyMedium, fontSize: FontSize.base, color: Colors.carbonBlack,
+  },
+  emojiInput: { width: 56, textAlign: 'center', fontSize: 24 },
+  modalActions: { flexDirection: 'row', gap: Spacing.sm },
+  modalCancelBtn: {
+    flex: 1, borderRadius: Radius.full, paddingVertical: 12,
+    backgroundColor: Colors.ghostGray, alignItems: 'center',
+  },
+  modalCancelText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.mutedStone },
+  modalAddBtn: {
+    flex: 1, borderRadius: Radius.full, paddingVertical: 12,
+    backgroundColor: Colors.carbonBlack, alignItems: 'center',
+  },
+  modalAddText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
 });
