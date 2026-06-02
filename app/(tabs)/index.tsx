@@ -2,7 +2,7 @@
 //  SPENDNOT — Dashboard (Screen 2)
 //  app/(tabs)/index.tsx
 // ─────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -17,12 +17,16 @@ import { router } from 'expo-router';
 import { useAuth } from '../../context/AuthContext';
 import { useWallets } from '../../hooks/useWallets';
 import { useExpenses, useMonthlyExpenses } from '../../hooks/useExpenses';
+import { useEmis } from '../../hooks/useEmis';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
   WalletColors, getCategoryDef,
 } from '../../constants/theme';
 import { Wallet, Expense } from '../../types/models';
-import { Timestamp } from 'firebase/firestore';
+import { doc, updateDoc, increment, collection, addDoc, Timestamp } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
+import Toast from 'react-native-toast-message';
+import * as Haptics from 'expo-haptics';
 
 // ── Wallet Mini Card ─────────────────────────
 function WalletMiniCard({ wallet, onPress }: { wallet: Wallet; onPress: () => void }) {
@@ -63,7 +67,11 @@ function ExpenseRow({ expense, walletName }: { expense: Expense; walletName: str
     : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
   return (
-    <View style={styles.expenseRow}>
+    <TouchableOpacity
+      style={styles.expenseRow}
+      onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: expense.id } } as any)}
+      activeOpacity={0.65}
+    >
       <View style={styles.expenseEmoji}>
         <Text style={{ fontSize: 18 }}>{cat.emoji}</Text>
       </View>
@@ -72,12 +80,12 @@ function ExpenseRow({ expense, walletName }: { expense: Expense; walletName: str
         <Text style={styles.expenseWallet}>{walletName}</Text>
       </View>
       <View style={styles.expenseRight}>
-        <Text style={[styles.expenseAmount, { color: expense.type === 'income' ? Colors.income : Colors.expense }]}>
+        <Text style={[styles.expenseAmount, { color: expense.type === 'income' ? Colors.incomeText : expense.type === 'savings' ? Colors.savingsText : Colors.expenseText }]}>
           {expense.type === 'income' ? '+' : '−'}₹{expense.amount.toLocaleString('en-IN')}
         </Text>
         <Text style={styles.expenseTime}>{dateStr}</Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -97,10 +105,70 @@ export default function DashboardScreen() {
   const { user } = useAuth();
   const { wallets, loading: walletsLoading } = useWallets();
   const { expenses, loading: expensesLoading } = useExpenses(10);
-  const { totalSpent, totalIncome } = useMonthlyExpenses();
+  const { totalSpent, totalIncome, totalSavings } = useMonthlyExpenses();
+  const { active: activeEmis } = useEmis();
+  
+  const [approvingEmiId, setApprovingEmiId] = useState<string | null>(null);
+
+  const currentMonthKey = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}`;
+  }, []);
+
+  const pendingEmis = useMemo(() => {
+    return activeEmis.filter((e) => e.lastPaidMonth !== currentMonthKey);
+  }, [activeEmis, currentMonthKey]);
+
+  const handleApproveEmi = async (emi: any) => {
+    if (!user) return;
+    setApprovingEmiId(emi.id);
+    try {
+      const dateNow = Timestamp.now();
+
+      await addDoc(collection(db, 'expenses'), {
+        uid: user.uid,
+        walletId: emi.walletId,
+        type: 'expense',
+        category: emi.category,
+        amount: emi.monthlyAmount,
+        note: `${emi.name} (Installment ${emi.currentInstallment + 1}/${emi.totalInstallments})`,
+        date: dateNow,
+        isRecurring: true,
+        recurringId: emi.id,
+        createdAt: dateNow,
+      });
+
+      await updateDoc(doc(db, 'wallets', emi.walletId), {
+        balance: increment(-emi.monthlyAmount),
+      });
+
+      const nextInstallment = emi.currentInstallment + 1;
+      const isFinished = nextInstallment >= emi.totalInstallments;
+      
+      await updateDoc(doc(db, 'emis', emi.id), {
+        currentInstallment: nextInstallment,
+        lastPaidMonth: currentMonthKey,
+        active: !isFinished,
+      });
+
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {}
+      Toast.show({
+        type: 'success',
+        text1: 'Installment paid ✓',
+        text2: `${emi.name} — ${nextInstallment}/${emi.totalInstallments} recorded.`,
+      });
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Approval failed', text2: err.message });
+    } finally {
+      setApprovingEmiId(null);
+    }
+  };
 
   const firstName = user?.displayName?.split(' ')[0] ?? 'there';
-  const savings = totalIncome - totalSpent;
 
   const walletMap: Record<string, string> = {};
   wallets.forEach((w) => { walletMap[w.id] = w.name; });
@@ -117,10 +185,78 @@ export default function DashboardScreen() {
             <Text style={styles.greeting}>Hi, {firstName}! 👋</Text>
             <Text style={styles.greetingSub}>Let's see where it went.</Text>
           </View>
-          <TouchableOpacity style={styles.bellBtn}>
+          <TouchableOpacity
+            style={styles.bellBtn}
+            onPress={() => {
+              if (pendingEmis.length > 0) {
+                Toast.show({
+                  type: 'info',
+                  text1: 'Pending EMIs',
+                  text2: `You have ${pendingEmis.length} pending EMI payment(s) to approve below.`,
+                });
+              } else {
+                Toast.show({
+                  type: 'info',
+                  text1: 'Notifications',
+                  text2: 'No new notifications.',
+                });
+              }
+            }}
+          >
             <Text style={{ fontSize: 18 }}>🔔</Text>
+            {pendingEmis.length > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{pendingEmis.length}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
+
+        {/* Pending EMI Approvals Banner */}
+        {pendingEmis.length > 0 && (
+          <View style={styles.emiBannerList}>
+            {pendingEmis.map((emi) => {
+              const today = new Date();
+              const isDueNow = today.getDate() >= emi.startDay;
+              const isApproving = approvingEmiId === emi.id;
+              
+              return (
+                <View key={emi.id} style={styles.notifCard}>
+                  <View style={styles.notifHeader}>
+                    <View style={styles.notifBrand}>
+                      <Text style={styles.notifIcon}>🔔</Text>
+                      <Text style={styles.notifAppName}>SPENDNOT</Text>
+                      <Text style={styles.notifDot}>•</Text>
+                      <Text style={[styles.notifTime, { color: isDueNow ? Colors.powerPink : Colors.mutedStone }]}>
+                        {isDueNow ? 'DUE NOW' : 'UPCOMING'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.notifBody}>
+                    <View style={styles.notifTextContainer}>
+                      <Text style={styles.notifTitle}>{emi.name} EMI</Text>
+                      <Text style={styles.notifDescription}>
+                        ₹{emi.monthlyAmount.toLocaleString('en-IN')} due via {walletMap[emi.walletId] ?? 'Wallet'}.
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.notifActionBtn, isApproving && { opacity: 0.6 }]}
+                      onPress={() => handleApproveEmi(emi)}
+                      disabled={isApproving}
+                      activeOpacity={0.85}
+                    >
+                      {isApproving ? (
+                        <ActivityIndicator size="small" color={Colors.polarWhite} />
+                      ) : (
+                        <Text style={styles.notifActionBtnText}>Approve</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Wallet Cards Scroll */}
         <ScrollView
@@ -177,7 +313,7 @@ export default function DashboardScreen() {
             <View>
               <Text style={styles.summaryStatLabel}>Savings</Text>
               <Text style={[styles.summaryStatVal, { color: Colors.savings }]}>
-                ₹{savings.toLocaleString('en-IN')}
+                ₹{totalSavings.toLocaleString('en-IN')}
               </Text>
             </View>
           </View>
@@ -240,6 +376,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: Colors.ghostGray,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    backgroundColor: Colors.danger,
+    borderRadius: Radius.full,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+    borderWidth: 1.5,
+    borderColor: Colors.polarWhite,
+  },
+  badgeText: {
+    color: Colors.polarWhite,
+    fontSize: 9,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    lineHeight: 11,
   },
   walletScrollOuter: { marginHorizontal: 0 },
   walletScroll: {
@@ -404,5 +562,86 @@ const styles = StyleSheet.create({
     fontSize: FontSize.base,
     color: Colors.mutedStone,
     textAlign: 'center',
+  },
+  emiBannerList: {
+    paddingHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  notifCard: {
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius.xl,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: Colors.ghostGray,
+    shadowColor: Colors.carbonBlack,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    marginBottom: Spacing.xs,
+  },
+  notifHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  notifBrand: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  notifIcon: {
+    fontSize: 12,
+  },
+  notifAppName: {
+    ...Typography.bodyBold,
+    fontSize: 10,
+    color: Colors.mutedStone,
+    letterSpacing: 0.8,
+  },
+  notifDot: {
+    fontSize: 10,
+    color: Colors.mutedStone,
+  },
+  notifTime: {
+    ...Typography.bodyBold,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  notifBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.md,
+  },
+  notifTextContainer: {
+    flex: 1,
+    gap: 2,
+  },
+  notifTitle: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
+  },
+  notifDescription: {
+    ...Typography.bodyMedium,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+  },
+  notifActionBtn: {
+    backgroundColor: Colors.carbonBlack,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifActionBtnText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.xs,
+    color: Colors.polarWhite,
   },
 });

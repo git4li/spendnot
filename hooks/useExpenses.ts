@@ -51,7 +51,9 @@ export function useMonthlyExpenses() {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthly = expenses.filter((e) => e.date.toDate() >= start && e.type === 'expense');
   const income = expenses.filter((e) => e.date.toDate() >= start && e.type === 'income');
+  const savings = expenses.filter((e) => e.date.toDate() >= start && e.type === 'savings');
   const totalSpent = monthly.reduce((s, e) => s + e.amount, 0);
   const totalIncome = income.reduce((s, e) => s + e.amount, 0);
-  return { monthly, income, totalSpent, totalIncome, loading };
+  const totalSavings = savings.reduce((s, e) => s + e.amount, 0);
+  return { monthly, income, savings, totalSpent, totalIncome, totalSavings, loading };
 }

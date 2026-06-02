@@ -42,8 +42,10 @@ service cloud.firestore {
       allow create: if isOwner(request.resource.data.uid)
         && request.resource.data.keys().hasAll(['uid', 'walletId', 'type', 'category', 'amount', 'date', 'createdAt'])
         && isValidAmount()
-        && request.resource.data.type in ['expense', 'income'];
-      allow update: if false; // Expenses are immutable; delete and re-create instead
+        && request.resource.data.type in ['expense', 'income', 'savings'];
+      allow update: if isOwner(resource.data.uid)
+        && isOwner(request.resource.data.uid)
+        && request.resource.data.type in ['expense', 'income', 'savings'];
       allow delete: if isOwner(resource.data.uid);
     }
 

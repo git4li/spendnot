@@ -68,17 +68,60 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  // Inject Google Fonts CSS on web as a fallback
+  // Inject @font-face CSS on web using exact names matching the StyleSheets
   useEffect(() => {
     if (Platform.OS === 'web') {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Montserrat:wght@900&display=swap';
-      document.head.appendChild(link);
+      const style = document.createElement('style');
+      style.textContent = `
+        @font-face {
+          font-family: 'Montserrat_900Black';
+          font-style: normal;
+          font-weight: 900;
+          font-display: swap;
+          src: url(https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCvC73w5aXp-p7K4KLg.woff2) format('woff2');
+        }
+        @font-face {
+          font-family: 'Inter_400Regular';
+          font-style: normal;
+          font-weight: 400;
+          font-display: swap;
+          src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2) format('woff2');
+        }
+        @font-face {
+          font-family: 'Inter_500Medium';
+          font-style: normal;
+          font-weight: 500;
+          font-display: swap;
+          src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2) format('woff2');
+        }
+        @font-face {
+          font-family: 'Inter_700Bold';
+          font-style: normal;
+          font-weight: 700;
+          font-display: swap;
+          src: url(https://fonts.gstatic.com/s/inter/v20/UcC73FwrK3iLTeHuS_nVMrMxCp50SjIa1ZL7W0Q5nw.woff2) format('woff2');
+        }
+        
+        /* Remove default browser focus rings and highlight colors on Web */
+        * {
+          outline: none !important;
+          -webkit-tap-highlight-color: transparent !important;
+        }
+        *:focus {
+          outline: none !important;
+          box-shadow: none !important;
+        }
+        input:focus, textarea:focus, select:focus, button:focus {
+          outline: none !important;
+          box-shadow: none !important;
+        }
+      `;
+      document.head.appendChild(style);
     }
   }, []);
 
-  if (!fontsLoaded) {
+  // On web, don't block rendering on font load — CSS fonts load asynchronously
+  if (!fontsLoaded && Platform.OS !== 'web') {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.canvasIce }}>
         <ActivityIndicator color={Colors.carbonBlack} />
@@ -98,6 +141,10 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen
                 name="modals/add-expense"
+                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+              />
+              <Stack.Screen
+                name="modals/add-emi"
                 options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
               />
               <Stack.Screen

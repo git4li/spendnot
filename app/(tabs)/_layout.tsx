@@ -2,6 +2,7 @@
 //  SPENDNOT — Tab Layout — Floating Pill Nav
 //  app/(tabs)/_layout.tsx
 // ─────────────────────────────────────────────
+import React, { useState } from 'react';
 import { Tabs, router } from 'expo-router';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -54,9 +55,32 @@ function PlusIcon() {
   );
 }
 
+const getPath = (w: number) => {
+  const h = 56;
+  const r = 28;
+  const bumpHeight = 16;
+  const mid = w / 2;
+  return `
+    M ${r} ${bumpHeight}
+    L ${mid - 44} ${bumpHeight}
+    C ${mid - 28} ${bumpHeight} ${mid - 24} 0 ${mid} 0
+    C ${mid + 24} 0 ${mid + 28} ${bumpHeight} ${mid + 44} ${bumpHeight}
+    L ${w - r} ${bumpHeight}
+    A ${r} ${r} 0 0 1 ${w} ${bumpHeight + r}
+    L ${w} ${bumpHeight + h - r}
+    A ${r} ${r} 0 0 1 ${w - r} ${bumpHeight + h}
+    L ${r} ${bumpHeight + h}
+    A ${r} ${r} 0 0 1 0 ${bumpHeight + h - r}
+    L 0 ${bumpHeight + r}
+    A ${r} ${r} 0 0 1 ${r} ${bumpHeight}
+    Z
+  `;
+};
+
 // ── Custom Tab Bar ────────────────────────────
 function CustomTabBar({ state, navigation }: any) {
   const insets = useSafeAreaInsets();
+  const [width, setWidth] = useState(0);
 
   const TABS = [
     { name: 'index', Icon: HomeIcon },
@@ -67,56 +91,76 @@ function CustomTabBar({ state, navigation }: any) {
 
   return (
     <View
-      style={[tabStyles.outerWrap, { paddingBottom: insets.bottom + 6 }]}
+      style={[tabStyles.outerWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
       pointerEvents="box-none"
     >
-      {/* + button — rendered FIRST so it appears ABOVE the pill */}
-      <TouchableOpacity
-        style={tabStyles.addBtn}
-        onPress={() => router.push('/modals/add-expense')}
-        activeOpacity={0.85}
+      <View
+        style={tabStyles.pillContainer}
+        onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+        pointerEvents="box-none"
       >
-        <PlusIcon />
-      </TouchableOpacity>
+        {width > 0 && (
+          <Svg
+            width={width}
+            height={72}
+            style={StyleSheet.absoluteFill}
+            pointerEvents="none"
+          >
+            <Path
+              d={getPath(width)}
+              fill={Colors.carbonBlack}
+            />
+          </Svg>
+        )}
 
-      {/* Dark pill — 2 icons | center gap | 2 icons */}
-      <View style={tabStyles.pill}>
-        {/* Left 2 tabs */}
-        {TABS.slice(0, 2).map(({ name, Icon }) => {
-          const idx = state.routes.findIndex((r: any) => r.name === name);
-          const isFocused = idx !== -1 && state.index === idx;
-          const color = isFocused ? '#ffffff' : 'rgba(255,255,255,0.45)';
-          return (
-            <TouchableOpacity
-              key={name}
-              style={[tabStyles.tabBtn, isFocused && tabStyles.tabBtnActive]}
-              onPress={() => navigation.navigate(name)}
-              activeOpacity={0.7}
-            >
-              <Icon color={color} />
-            </TouchableOpacity>
-          );
-        })}
+        {/* + button — rendered centered in the bump */}
+        <TouchableOpacity
+          style={tabStyles.addBtn}
+          onPress={() => router.push('/modals/add-expense')}
+          activeOpacity={0.85}
+        >
+          <PlusIcon />
+        </TouchableOpacity>
 
-        {/* Center gap — sits below the + button */}
-        <View style={tabStyles.centerGap} />
+        {/* Icons row overlaid on the flat part of the tab bar */}
+        <View style={tabStyles.iconRow} pointerEvents="box-none">
+          {/* Left 2 tabs */}
+          {TABS.slice(0, 2).map(({ name, Icon }) => {
+            const idx = state.routes.findIndex((r: any) => r.name === name);
+            const isFocused = idx !== -1 && state.index === idx;
+            const color = isFocused ? '#ffffff' : 'rgba(255,255,255,0.45)';
+            return (
+              <TouchableOpacity
+                key={name}
+                style={[tabStyles.tabBtn, isFocused && tabStyles.tabBtnActive]}
+                onPress={() => navigation.navigate(name)}
+                activeOpacity={0.7}
+              >
+                <Icon color={color} />
+              </TouchableOpacity>
+            );
+          })}
 
-        {/* Right 2 tabs */}
-        {TABS.slice(2).map(({ name, Icon }) => {
-          const idx = state.routes.findIndex((r: any) => r.name === name);
-          const isFocused = idx !== -1 && state.index === idx;
-          const color = isFocused ? '#ffffff' : 'rgba(255,255,255,0.45)';
-          return (
-            <TouchableOpacity
-              key={name}
-              style={[tabStyles.tabBtn, isFocused && tabStyles.tabBtnActive]}
-              onPress={() => navigation.navigate(name)}
-              activeOpacity={0.7}
-            >
-              <Icon color={color} />
-            </TouchableOpacity>
-          );
-        })}
+          {/* Center gap — sits below the + button */}
+          <View style={tabStyles.centerGap} pointerEvents="none" />
+
+          {/* Right 2 tabs */}
+          {TABS.slice(2).map(({ name, Icon }) => {
+            const idx = state.routes.findIndex((r: any) => r.name === name);
+            const isFocused = idx !== -1 && state.index === idx;
+            const color = isFocused ? '#ffffff' : 'rgba(255,255,255,0.45)';
+            return (
+              <TouchableOpacity
+                key={name}
+                style={[tabStyles.tabBtn, isFocused && tabStyles.tabBtnActive]}
+                onPress={() => navigation.navigate(name)}
+                activeOpacity={0.7}
+              >
+                <Icon color={color} />
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
     </View>
   );
@@ -129,41 +173,52 @@ const tabStyles = StyleSheet.create({
     left: 0,
     right: 0,
     alignItems: 'center',
-    flexDirection: 'column',
+  },
+  pillContainer: {
+    width: '90%',
+    maxWidth: 400,
+    height: 72,
+    position: 'relative',
   },
   addBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    position: 'absolute',
+    top: 4,
+    left: '50%',
+    marginLeft: -24,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: Colors.lilacPink,
     alignItems: 'center',
     justifyContent: 'center',
-    // Overlaps slightly into the pill top for the bump look
-    marginBottom: -16,
     zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  pill: {
+  iconRow: {
     flexDirection: 'row',
-    backgroundColor: Colors.carbonBlack,
-    borderRadius: 40,
-    marginHorizontal: Spacing.xl,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.md,
     alignItems: 'center',
-    alignSelf: 'stretch',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    height: 56,
+    marginTop: 16,
+    width: '100%',
   },
   tabBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 28,
+    height: 40,
+    borderRadius: 20,
   },
   tabBtnActive: {
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
   centerGap: {
-    width: 64, // space for the + button above
+    width: 60,
   },
 });
 

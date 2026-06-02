@@ -4,13 +4,13 @@
 
 export const Colors = {
   // Core palette
-  canvasIce: '#F9F6E5',       // Cream background
+  canvasIce: '#ffffff',       // Pure white background
   polarWhite: '#ffffff',
   carbonBlack: '#1A1A1A',     // Deep Charcoal
   deepGraphite: '#2a2a2a',
   ghostGray: '#EFEFEF',
-  mutedStone: '#7a7a7a',
-  softStone: '#999999',
+  mutedStone: '#5A5A5A',       // Darkened for accessibility contrast
+  softStone: '#767676',        // Darkened for accessibility contrast
 
   // Pastel accents
   softBlue: '#B7D3F2',
@@ -30,10 +30,8 @@ export const Colors = {
   walletCashText: '#1A1A1A',
   walletCredit: '#1A1A1A',
   walletCreditText: '#ffffff',
-  walletGPay: '#B7D3F2',
-  walletGPayText: '#1A1A1A',
-  walletPhonePe: '#F3C0DC',
-  walletPhonePeText: '#1A1A1A',
+  walletBankDefault: '#AEC2F7',
+  walletBankDefaultText: '#1A1A1A',
 
   // Semantic
   income: '#99B889',
@@ -41,6 +39,11 @@ export const Colors = {
   savings: '#B7D3F2',
   danger: '#e05c5c',
   overBudget: '#e05c5c',
+  
+  // High-contrast text equivalents for WCAG AA compliance
+  incomeText: '#2E6C40',
+  expenseText: '#C23E7D',
+  savingsText: '#2B5595',
 } as const;
 
 export const Typography = {
@@ -103,14 +106,33 @@ export const Spacing = {
 } as const;
 
 // Wallet type → colour mapping
-export type WalletType = 'cash' | 'credit' | 'upi-gpay' | 'upi-phonepe' | 'upi-other';
+export type WalletType = 'cash' | 'credit' | 'bank';
 
 export const WalletColors: Record<WalletType, { bg: string; text: string }> = {
   cash: { bg: Colors.walletCash, text: Colors.walletCashText },
   credit: { bg: Colors.walletCredit, text: Colors.walletCreditText },
-  'upi-gpay': { bg: Colors.walletGPay, text: Colors.walletGPayText },
-  'upi-phonepe': { bg: Colors.walletPhonePe, text: Colors.walletPhonePeText },
-  'upi-other': { bg: Colors.periwinkle, text: Colors.carbonBlack },
+  bank: { bg: Colors.walletBankDefault, text: Colors.walletBankDefaultText },
+};
+
+// Bank brand pastel colors for UI styling
+export const BankColors: Record<string, { bg: string; text: string }> = {
+  hdfc: { bg: '#A6C8FF', text: '#0A2540' },      // Pastel Navy
+  sbi: { bg: '#AEE4E8', text: '#004A50' },       // Pastel Teal
+  icici: { bg: '#FFE3A8', text: '#592900' },     // Pastel Amber
+  axis: { bg: '#FFCCD5', text: '#5A0E1A' },      // Pastel Maroon
+  kotak: { bg: '#FFD3D6', text: '#1E3A8A' },     // Pastel Red/Blue
+};
+
+export const getWalletColors = (type: WalletType, bankName?: string | null): { bg: string; text: string } => {
+  if (type === 'bank' && bankName) {
+    const key = bankName.toLowerCase().trim();
+    if (key.includes('hdfc')) return BankColors.hdfc;
+    if (key.includes('sbi') || key.includes('state bank')) return BankColors.sbi;
+    if (key.includes('icici')) return BankColors.icici;
+    if (key.includes('axis')) return BankColors.axis;
+    if (key.includes('kotak')) return BankColors.kotak;
+  }
+  return WalletColors[type];
 };
 
 // Category definitions
@@ -129,7 +151,6 @@ export const CATEGORIES: CategoryDef[] = [
   { key: 'bills', label: 'Bills', emoji: '⚡' },
   { key: 'health', label: 'Health', emoji: '💊' },
   { key: 'entertainment', label: 'Entertain', emoji: '🎬' },
-  { key: 'education', label: 'Education', emoji: '📚' },
   { key: 'other', label: 'Other', emoji: '📦' },
 ];
 

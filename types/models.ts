@@ -21,15 +21,17 @@ export interface Wallet {
   uid: string;
   name: string;
   type: WalletType;
-  upiApp?: 'gpay' | 'phonepe' | 'other';
   bankName?: string;
   balance: number;
   isDefault: boolean;
   createdAt: Timestamp;
+  creditLimit?: number;              // Custom usage cap / limit set by user
+  billingCycleStartDay?: number;     // Day of month statement is generated (1-31)
+  paymentDueDay?: number;            // Day of month payment is due (1-31)
 }
 
 // ── Expense ───────────────────────────────────
-export type TransactionType = 'expense' | 'income';
+export type TransactionType = 'expense' | 'income' | 'savings';
 
 export interface Expense {
   id: string;
@@ -71,4 +73,20 @@ export interface Recurring {
   isAutoDeduct: boolean;
   lastPaidDate?: Timestamp;
   isPaid: boolean;
+}
+
+// ── EMI ───────────────────────────────────────
+export interface EMI {
+  id: string;
+  uid: string;
+  name: string;
+  walletId: string;                 // Linked source wallet
+  category: CategoryKey;
+  monthlyAmount: number;
+  totalInstallments: number;
+  currentInstallment: number;
+  startDay: number;                 // Day of the month the EMI is due (1-31)
+  createdAt: Timestamp;
+  active: boolean;
+  lastPaidMonth?: string;           // Track last paid month in format "YYYY-MM" to prevent duplicate approvals
 }

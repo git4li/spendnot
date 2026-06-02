@@ -5,15 +5,16 @@
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator,
+  StyleSheet, ActivityIndicator, Modal, TextInput, Keyboard, TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, router } from 'expo-router';
 import {
-  collection, query, where, orderBy, getDocs,
+  collection, query, where, orderBy, getDocs, doc, updateDoc, addDoc, increment,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { auth } from '../../lib/firebase';
+import Toast from 'react-native-toast-message';
 import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
@@ -28,12 +29,48 @@ function formatDate(ts: Timestamp): string {
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
+const getCreditCycleInfo = (cycleStart: number, dueDay: number) => {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth(); // 0-indexed
+  const currentDate = today.getDate();
+
+  let start: Date;
+  let end: Date;
+  let due: Date;
+
+  if (currentDate >= cycleStart) {
+    start = new Date(currentYear, currentMonth, cycleStart);
+    end = new Date(currentYear, currentMonth + 1, cycleStart - 1, 23, 59, 59);
+    due = new Date(currentYear, currentMonth + 1, dueDay);
+  } else {
+    start = new Date(currentYear, currentMonth - 1, cycleStart);
+    end = new Date(currentYear, currentMonth, cycleStart - 1, 23, 59, 59);
+    due = new Date(currentYear, currentMonth, dueDay);
+  }
+
+  const diffTime = due.getTime() - today.getTime();
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+  const options: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short' };
+  const periodStr = `${start.toLocaleDateString('en-IN', options)} – ${end.toLocaleDateString('en-IN', options)}`;
+  const dueStr = due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  return { periodStr, dueStr, diffDays };
+};
+
 export default function WalletReportModal() {
   const { walletId } = useLocalSearchParams<{ walletId: string }>();
   const { wallets } = useWallets();
   const { bottom } = useSafeAreaInsets();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Credit Card Bill payment states
+  const [showPayBill, setShowPayBill] = useState(false);
+  const [sourceWalletId, setSourceWalletId] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [processingPayment, setProcessingPayment] = useState(false);
 
   const wallet = wallets.find((w) => w.id === walletId);
   const colors = wallet ? (WalletColors[wallet.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack }) : { bg: Colors.ghostGray, text: Colors.carbonBlack };
@@ -62,6 +99,98 @@ export default function WalletReportModal() {
   const totalSpent = monthlyExpenses.filter((e) => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
   const totalReceived = monthlyExpenses.filter((e) => e.type === 'income').reduce((s, e) => s + e.amount, 0);
 
+  useEffect(() => {
+    if (wallet) {
+      setPayAmount(String(wallet.balance));
+    }
+  }, [wallet]);
+
+  useEffect(() => {
+    if (wallets.length > 0 && !sourceWalletId) {
+      const def = wallets.find(w => w.isDefault && w.id !== walletId) || wallets.find(w => w.id !== walletId);
+      if (def) setSourceWalletId(def.id);
+    }
+  }, [wallets, walletId]);
+
+  const handlePayBill = async () => {
+    const amt = parseFloat(payAmount.replace(/,/g, ''));
+    if (!amt || amt <= 0) {
+      Toast.show({ type: 'error', text1: 'Invalid Amount', text2: 'Please enter a valid payment amount.' });
+      return;
+    }
+    if (!sourceWalletId) {
+      Toast.show({ type: 'error', text1: 'No Source Wallet', text2: 'Please select a funding source.' });
+      return;
+    }
+
+    setProcessingPayment(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        Toast.show({ type: 'error', text1: 'Not logged in', text2: 'Please log in again.' });
+        return;
+      }
+      const dateNow = Timestamp.now();
+
+      // 1. Log payment received transaction on Credit Card wallet
+      await addDoc(collection(db, 'expenses'), {
+        uid: user.uid,
+        walletId: walletId,
+        type: 'income',
+        category: 'bills',
+        amount: amt,
+        note: `Paid from ${wallets.find(w => w.id === sourceWalletId)?.name ?? 'Wallet'}`,
+        date: dateNow,
+        isRecurring: false,
+        createdAt: dateNow,
+      });
+
+      // 2. Log expense transaction on funding Source wallet
+      await addDoc(collection(db, 'expenses'), {
+        uid: user.uid,
+        walletId: sourceWalletId,
+        type: 'expense',
+        category: 'bills',
+        amount: amt,
+        note: `Credit card payment: ${wallet?.name ?? 'Card'}`,
+        date: dateNow,
+        isRecurring: false,
+        createdAt: dateNow,
+      });
+
+      // 3. Subtract from Credit Card outstanding balance
+      await updateDoc(doc(db, 'wallets', walletId), {
+        balance: increment(-amt),
+      });
+
+      // 4. Subtract from funding Source wallet balance
+      await updateDoc(doc(db, 'wallets', sourceWalletId), {
+        balance: increment(-amt),
+      });
+
+      Toast.show({ type: 'success', text1: 'Bill Paid ✓', text2: `₹${amt.toLocaleString('en-IN')} applied.` });
+      setShowPayBill(false);
+
+      // Refresh local transaction list
+      const q = query(
+        collection(db, 'expenses'),
+        where('uid', '==', user.uid),
+        where('walletId', '==', walletId),
+        orderBy('date', 'desc'),
+      );
+      const snap = await getDocs(q);
+      setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Expense)));
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Payment Failed', text2: err.message });
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
+  const cycleInfo = wallet?.type === 'credit' && wallet.billingCycleStartDay && wallet.paymentDueDay
+    ? getCreditCycleInfo(wallet.billingCycleStartDay, wallet.paymentDueDay)
+    : null;
+
   // Category breakdown
   const catBreakdown: Record<string, number> = {};
   monthlyExpenses.filter((e) => e.type === 'expense').forEach((e) => {
@@ -73,17 +202,23 @@ export default function WalletReportModal() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Header card with wallet colours */}
       <View style={[styles.header, { backgroundColor: colors.bg }]}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Text style={[styles.backArrow, { color: colors.text }]}>←</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.md }}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={[styles.backArrow, { color: colors.text }]}>←</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/modals/add-wallet', params: { walletId } } as any)}>
+            <Text style={{ ...Typography.bodyBold, fontSize: FontSize.sm, color: colors.text, opacity: 0.8 }}>Edit</Text>
+          </TouchableOpacity>
+        </View>
         <View>
           <Text style={[styles.walletName, { color: colors.text }]}>{wallet?.name ?? 'Wallet'}</Text>
           <Text style={[styles.walletBalance, { color: colors.text }]}>
             ₹{(wallet?.balance ?? 0).toLocaleString('en-IN')}
           </Text>
-          <Text style={[styles.walletBalanceLabel, { color: colors.text, opacity: 0.6 }]}>Current balance</Text>
+          <Text style={[styles.walletBalanceLabel, { color: colors.text, opacity: 0.6 }]}>
+            {wallet?.type === 'credit' ? 'Outstanding Owed' : 'Current balance'}
+          </Text>
         </View>
         {/* This month summary */}
         <View style={styles.monthRow}>
@@ -105,6 +240,81 @@ export default function WalletReportModal() {
           contentContainerStyle={[styles.content, { paddingBottom: bottom + 24 }]}
           showsVerticalScrollIndicator={false}
         >
+          {/* Credit Limit & Utilization */}
+          {wallet?.type === 'credit' && wallet.creditLimit ? (
+            <View style={styles.creditLimitCard}>
+              <View style={styles.limitHeader}>
+                <Text style={styles.limitTitle}>Monthly Usage Cap</Text>
+                <Text style={styles.limitValue}>₹{wallet.creditLimit.toLocaleString('en-IN')}</Text>
+              </View>
+              
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBarTrack}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${Math.min((wallet.balance / wallet.creditLimit) * 100, 100)}%`,
+                        backgroundColor: (wallet.balance / wallet.creditLimit) > 0.8 ? Colors.danger : Colors.carbonBlack,
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.limitSubRow}>
+                  <Text style={styles.limitSubText}>
+                    {Math.round(Math.min((wallet.balance / wallet.creditLimit) * 100, 100))}% Utilized
+                  </Text>
+                  <Text style={styles.limitSubText}>
+                    ₹{Math.max(wallet.creditLimit - wallet.balance, 0).toLocaleString('en-IN')} Available
+                  </Text>
+                </View>
+              </View>
+
+              {/* Warning if over limit or > 80% */}
+              {(wallet.balance / wallet.creditLimit) > 0.8 && (
+                <View style={styles.limitWarningBox}>
+                  <Text style={styles.limitWarningText}>
+                    ⚠️ High Utilization! Try to keep it below 80% to maintain a good credit score.
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : null}
+
+          {/* Credit Cycle Info */}
+          {cycleInfo && (
+            <View style={styles.cycleCard}>
+              <Text style={styles.cycleTitle}>Billing Cycle & Due Date</Text>
+              <View style={styles.cycleGrid}>
+                <View style={styles.cycleItem}>
+                  <Text style={styles.cycleLabel}>Statement Period</Text>
+                  <Text style={styles.cycleValue}>{cycleInfo.periodStr}</Text>
+                </View>
+                <View style={styles.cycleItem}>
+                  <Text style={styles.cycleLabel}>Due Date</Text>
+                  <Text style={[styles.cycleValue, cycleInfo.diffDays <= 5 && { color: Colors.danger }]}>
+                    {cycleInfo.dueStr}
+                  </Text>
+                  <Text style={styles.cycleCountdown}>
+                    {cycleInfo.diffDays > 0
+                      ? `⏳ ${cycleInfo.diffDays} days left`
+                      : cycleInfo.diffDays === 0
+                      ? '🚨 Due Today!'
+                      : '⚠️ Overdue'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Pay Bill button */}
+              <TouchableOpacity
+                style={styles.payBillBtn}
+                onPress={() => setShowPayBill(true)}
+              >
+                <Text style={styles.payBillBtnText}>Pay Card Bill</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Category breakdown */}
           {topCats.length > 0 && (
             <>
@@ -162,6 +372,75 @@ export default function WalletReportModal() {
           )}
         </ScrollView>
       )}
+      {/* Pay Bill Modal */}
+      <Modal visible={showPayBill} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={() => { setShowPayBill(false); Keyboard.dismiss(); }}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Pay Card Bill</Text>
+                
+                <Text style={styles.modalLabel}>AMOUNT TO PAY (₹)</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="0"
+                  placeholderTextColor={Colors.mutedStone}
+                  keyboardType="decimal-pad"
+                  value={payAmount}
+                  onChangeText={setPayAmount}
+                />
+
+                <Text style={styles.modalLabel}>PAY FROM WALLET</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginVertical: Spacing.xs }}>
+                  <View style={styles.walletSelectRow}>
+                    {wallets
+                      .filter((w) => w.id !== walletId)
+                      .map((w) => {
+                        const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                        const isSel = sourceWalletId === w.id;
+                        return (
+                          <TouchableOpacity
+                            key={w.id}
+                            style={[
+                              styles.walletSelectPill,
+                              { backgroundColor: wColors.bg },
+                              isSel && styles.walletSelectPillActive,
+                            ]}
+                            onPress={() => setSourceWalletId(w.id)}
+                          >
+                            {isSel && <Text style={{ color: wColors.text, fontWeight: 'bold' }}>✓ </Text>}
+                            <Text style={{ color: wColors.text, fontWeight: '700', fontSize: 12 }}>{w.name}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                  </View>
+                </ScrollView>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setShowPayBill(false)}
+                    disabled={processingPayment}
+                  >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalPayBtn}
+                    onPress={handlePayBill}
+                    disabled={processingPayment}
+                  >
+                    {processingPayment ? (
+                      <ActivityIndicator color={Colors.polarWhite} />
+                    ) : (
+                      <Text style={styles.modalPayText}>Confirm Payment</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -244,4 +523,111 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: 'center', paddingVertical: Spacing['3xl'] },
   emptyEmoji: { fontSize: 36, marginBottom: Spacing.sm },
   emptyText: { ...Typography.body, fontSize: FontSize.base, color: Colors.mutedStone, textAlign: 'center' },
+  creditLimitCard: {
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius.lg,
+    padding: Spacing.base,
+    marginBottom: Spacing.base,
+  },
+  limitHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  limitTitle: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.mutedStone },
+  limitValue: { ...Typography.bodyBold, fontSize: FontSize.md, color: Colors.carbonBlack },
+  progressContainer: { gap: Spacing.xs },
+  progressBarTrack: {
+    height: 8,
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    overflow: 'hidden',
+  },
+  progressBarFill: { height: '100%', borderRadius: Radius.full },
+  limitSubRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  limitSubText: { ...Typography.bodyMedium, fontSize: 11, color: Colors.mutedStone },
+  limitWarningBox: {
+    backgroundColor: 'rgba(224,92,92,0.1)',
+    borderRadius: Radius.sm,
+    padding: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  limitWarningText: { ...Typography.bodyMedium, fontSize: 11, color: Colors.danger },
+  cycleCard: {
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius.lg,
+    padding: Spacing.base,
+    marginBottom: Spacing.base,
+  },
+  cycleTitle: { ...Typography.bodyBold, fontSize: FontSize.lg, color: Colors.carbonBlack, marginBottom: Spacing.md },
+  cycleGrid: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.md },
+  cycleItem: { flex: 1, gap: Spacing.xs },
+  cycleLabel: { ...Typography.bodyMedium, fontSize: 10, color: Colors.mutedStone, textTransform: 'uppercase' },
+  cycleValue: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.carbonBlack },
+  cycleCountdown: { ...Typography.bodyMedium, fontSize: 11, color: Colors.mutedStone },
+  payBillBtn: {
+    backgroundColor: Colors.carbonBlack,
+    borderRadius: Radius.full,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  payBillBtnText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.polarWhite },
+  // Modal Styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  modalCard: {
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius['2xl'],
+    padding: Spacing.xl,
+    width: '100%',
+    maxWidth: 380,
+    gap: Spacing.base,
+  },
+  modalTitle: { ...Typography.bodyBold, fontSize: FontSize.xl, color: Colors.carbonBlack },
+  modalLabel: { ...Typography.bodyBold, fontSize: FontSize.xs, color: Colors.mutedStone, letterSpacing: 0.5 },
+  modalInput: {
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: 12,
+    ...Typography.bodyMedium,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
+  },
+  modalActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  modalCancelBtn: {
+    flex: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 12,
+    backgroundColor: Colors.ghostGray,
+    alignItems: 'center',
+  },
+  modalCancelText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.mutedStone },
+  modalPayBtn: {
+    flex: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 12,
+    backgroundColor: Colors.carbonBlack,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalPayText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
+  walletSelectRow: { flexDirection: 'row', gap: Spacing.sm, paddingVertical: 4 },
+  walletSelectPill: {
+    paddingHorizontal: Spacing.base,
+    paddingVertical: 8,
+    borderRadius: Radius.full,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  walletSelectPillActive: { borderColor: Colors.carbonBlack },
 });

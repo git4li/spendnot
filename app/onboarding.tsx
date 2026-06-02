@@ -12,14 +12,13 @@ import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { doc, setDoc, Timestamp } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { useAuth } from '../context/AuthContext';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  WalletType, WalletColors,
+  WalletType, getWalletColors,
 } from '../constants/theme';
 import { Wallet } from '../types/models';
 import * as Haptics from 'expo-haptics';
-
-type UpiApp = 'gpay' | 'phonepe' | 'other';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const TOTAL_STEPS = 3;
@@ -106,27 +105,28 @@ function StepFeatures({ onNext }: { onNext: () => void }) {
 // ── Step 3: Add Wallet ───────────────────────
 function StepWallet({ onDone }: { onDone: () => void }) {
   const { bottom } = useSafeAreaInsets();
-  const [walletType, setWalletType] = useState<WalletType>('upi-gpay');
+  const [walletType, setWalletType] = useState<WalletType>('bank');
   const [bankName, setBankName] = useState('');
-  const [upiApp, setUpiApp] = useState<UpiApp>('gpay');
   const [walletName, setWalletName] = useState('');
   const [isDefault, setIsDefault] = useState(true);
   const [loading, setLoading] = useState(false);
 
-  const user = auth.currentUser!;
+  const { user } = useAuth();
 
   const resolvedWalletName = (): string => {
     if (walletName.trim()) return walletName.trim();
     switch (walletType) {
       case 'cash': return 'Cash';
       case 'credit': return bankName.trim() ? `${bankName.trim()} Credit` : 'Credit Card';
-      case 'upi-gpay': return bankName.trim() ? `GPay – ${bankName.trim()}` : 'GPay';
-      case 'upi-phonepe': return 'PhonePe';
-      case 'upi-other': return bankName.trim() ? `UPI – ${bankName.trim()}` : 'UPI';
+      case 'bank': return bankName.trim() ? `${bankName.trim()}` : 'Bank Account';
     }
   };
 
   const handleStart = async () => {
+    if (!user) {
+      Alert.alert('Error', 'Not logged in. Please log in first.');
+      return;
+    }
     setLoading(true);
     try {
       const walletId = `${user.uid}_wallet_${Date.now()}`;
@@ -134,7 +134,6 @@ function StepWallet({ onDone }: { onDone: () => void }) {
         uid: user.uid,
         name: resolvedWalletName(),
         type: walletType,
-        ...(walletType.startsWith('upi') ? { upiApp } : {}),
         ...(bankName.trim() ? { bankName: bankName.trim() } : {}),
         balance: 0,
         isDefault,
@@ -159,9 +158,11 @@ function StepWallet({ onDone }: { onDone: () => void }) {
 
   const walletCards: { type: WalletType; icon: string; label: string; sub: string }[] = [
     { type: 'cash', icon: '💵', label: 'Cash', sub: 'Physical cash' },
+    { type: 'bank', icon: '🏦', label: 'Bank Account', sub: 'HDFC, SBI, ICICI...' },
     { type: 'credit', icon: '💳', label: 'Credit Card', sub: 'Bank-issued card' },
-    { type: 'upi-gpay', icon: '📱', label: 'UPI', sub: 'GPay, PhonePe & more' },
   ];
+
+  const POPULAR_BANKS = ['HDFC', 'SBI', 'ICICI', 'Axis', 'Kotak'];
 
   return (
     <ScrollView
@@ -175,8 +176,8 @@ function StepWallet({ onDone }: { onDone: () => void }) {
       {/* Wallet type cards */}
       <View style={{ gap: Spacing.md, marginBottom: Spacing.lg }}>
         {walletCards.map(({ type, icon, label, sub }) => {
-          const colors = WalletColors[type];
-          const selected = walletType === type || (type === 'upi-gpay' && walletType.startsWith('upi'));
+          const colors = getWalletColors(type, bankName);
+          const selected = walletType === type;
           return (
             <TouchableOpacity
               key={type}
@@ -186,8 +187,7 @@ function StepWallet({ onDone }: { onDone: () => void }) {
                 selected && walletCardStyles.selected,
               ]}
               onPress={() => {
-                if (type === 'upi-gpay') { setWalletType('upi-gpay'); setUpiApp('gpay'); }
-                else { setWalletType(type); }
+                setWalletType(type);
                 Haptics.selectionAsync();
               }}
               activeOpacity={0.8}
@@ -213,39 +213,32 @@ function StepWallet({ onDone }: { onDone: () => void }) {
           <Text style={stepStyles.fieldLabel}>BANK NAME</Text>
           <TextInput
             style={stepStyles.input}
-            placeholder={walletType === 'credit' ? 'HDFC, SBI, ICICI...' : 'State Bank of India'}
+            placeholder={walletType === 'credit' ? 'e.g. HDFC, SBI, ICICI' : 'e.g. State Bank of India'}
             placeholderTextColor={Colors.mutedStone}
             value={bankName}
             onChangeText={setBankName}
             autoCapitalize="words"
           />
-        </View>
-      )}
-
-      {/* UPI app selector */}
-      {walletType.startsWith('upi') && (
-        <View style={{ marginBottom: Spacing.base }}>
-          <Text style={stepStyles.fieldLabel}>UPI APP</Text>
-          <View style={{ flexDirection: 'row', gap: Spacing.sm, flexWrap: 'wrap' }}>
-            {(['gpay', 'phonepe', 'other'] as UpiApp[]).map((app) => (
-              <TouchableOpacity
-                key={app}
-                style={[stepStyles.pill, upiApp === app && stepStyles.pillActive]}
-                onPress={() => {
-                  setUpiApp(app);
-                  const typeMap: Record<UpiApp, WalletType> = {
-                    gpay: 'upi-gpay', phonepe: 'upi-phonepe', other: 'upi-other',
-                  };
-                  setWalletType(typeMap[app]);
-                  Haptics.selectionAsync();
-                }}
-              >
-                <Text style={[stepStyles.pillText, upiApp === app && stepStyles.pillTextActive]}>
-                  {app === 'gpay' ? 'GPay' : app === 'phonepe' ? 'PhonePe' : 'Other'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {/* Popular Banks */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={stepStyles.bankPillRow}>
+            {POPULAR_BANKS.map((b) => {
+              const isActive = bankName.toLowerCase().includes(b.toLowerCase());
+              return (
+                <TouchableOpacity
+                  key={b}
+                  style={[stepStyles.bankPill, isActive && stepStyles.bankPillActive]}
+                  onPress={() => {
+                    setBankName(b);
+                    Haptics.selectionAsync();
+                  }}
+                >
+                  <Text style={[stepStyles.bankPillText, isActive && stepStyles.bankPillTextActive]}>
+                    {b}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         </View>
       )}
 
@@ -498,4 +491,28 @@ const stepStyles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   toggleThumbOff: { alignSelf: 'flex-start' },
+  bankPillRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
+  bankPill: {
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    backgroundColor: Colors.ghostGray,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  bankPillActive: {
+    backgroundColor: Colors.carbonBlack,
+  },
+  bankPillText: {
+    ...Typography.bodyMedium,
+    fontSize: FontSize.xs,
+    color: Colors.carbonBlack,
+  },
+  bankPillTextActive: {
+    color: Colors.polarWhite,
+  },
 });

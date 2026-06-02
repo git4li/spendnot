@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import Svg, { Polyline, Circle, Line, Polygon } from 'react-native-svg';
+import Svg, { Polyline, Circle, Line, Polygon, Path, Text as SvgText } from 'react-native-svg';
 import { doc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useExpenses } from '../../hooks/useExpenses';
@@ -23,60 +23,129 @@ const CHART_H = 120;
 
 type Period = 'week' | 'month' | 'custom';
 
-function getWeekDays(): { label: string; date: Date }[] {
-  const days = [];
-  const now = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(now.getDate() - i);
-    days.push({
-      label: d.toLocaleDateString('en-IN', { weekday: 'short' }),
-      date: d,
+// ── Category Donut Chart ──────────────────────
+function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: string; emoji: string; spent: number }> }) {
+  const total = useMemo(() => catRows.reduce((sum, c) => sum + c.spent, 0), [catRows]);
+  
+  const segments = useMemo(() => {
+    if (total === 0 || catRows.length === 0) return [];
+    
+    const CHART_COLORS = [Colors.lilacPink, Colors.softBlue, Colors.sageGreen, Colors.pastelYellow, Colors.periwinkle];
+    
+    const N = catRows.length;
+    // If only 1 category, it occupies the whole circle (with a tiny gap of 10 degrees to allow rounded caps)
+    const gapAngle = N === 1 ? 10 * Math.PI / 180 : 12 * Math.PI / 180;
+    const totalGapAngle = N * gapAngle;
+    const totalActiveAngle = 2 * Math.PI - totalGapAngle;
+    
+    let currentAngle = -Math.PI / 2; // start at top (12 o'clock)
+    
+    return catRows.map((c, index) => {
+      const fraction = c.spent / total;
+      const activeAngle = fraction * totalActiveAngle;
+      
+      const startAngle = currentAngle;
+      const endAngle = currentAngle + activeAngle;
+      const midAngle = startAngle + activeAngle / 2;
+      
+      // Update for the next segment
+      currentAngle = endAngle + gapAngle;
+      
+      return {
+        key: c.key,
+        emoji: c.emoji,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+        startAngle,
+        endAngle,
+        midAngle,
+        spent: c.spent,
+      };
     });
-  }
-  return days;
-}
+  }, [catRows, total]);
 
-// ── Simple Line Chart ────────────────────────
-function SpendingLineChart({ data }: { data: number[] }) {
-  const max = Math.max(...data, 1);
-  const padH = 20;
-  const step = (CHART_W - padH * 2) / (data.length - 1);
+  const topSpender = catRows[0];
 
-  const points = data
-    .map((v, i) => {
-      const x = padH + i * step;
-      const y = CHART_H - padH - ((v / max) * (CHART_H - padH * 2));
-      return `${x},${y}`;
-    })
-    .join(' ');
+  const cx = 120;
+  const cy = 120;
+  const radius = 80;
+  const strokeWidth = 22;
 
-  const areaPoints = `${padH},${CHART_H - padH} ${points} ${padH + (data.length - 1) * step},${CHART_H - padH}`;
+  const polarToCartesian = (cx: number, cy: number, r: number, angleRad: number) => {
+    return {
+      x: cx + r * Math.cos(angleRad),
+      y: cy + r * Math.sin(angleRad),
+    };
+  };
+
+  const getArcPath = (cx: number, cy: number, r: number, startAngle: number, endAngle: number) => {
+    const start = polarToCartesian(cx, cy, r, startAngle);
+    const end = polarToCartesian(cx, cy, r, endAngle);
+    const diff = endAngle - startAngle;
+    const largeArcFlag = diff > Math.PI ? 1 : 0;
+    return `M ${start.x} ${start.y} A ${r} ${r} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
+  };
 
   return (
-    <Svg width={CHART_W} height={CHART_H}>
-      {/* Grid lines */}
-      {[0.25, 0.5, 0.75].map((f, i) => {
-        const y = CHART_H - padH - f * (CHART_H - padH * 2);
-        return <Line key={i} x1={padH} y1={y} x2={CHART_W - padH} y2={y} stroke={Colors.ghostGray} strokeWidth={1} />;
-      })}
-      {/* Area */}
-      <Polygon points={areaPoints} fill="rgba(2,187,255,0.08)" />
-      {/* Line */}
-      <Polyline points={points} fill="none" stroke={Colors.skyBlue} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-      {/* Dots */}
-      {data.map((v, i) => {
-        const x = padH + i * step;
-        const y = CHART_H - padH - ((v / max) * (CHART_H - padH * 2));
-        return <Circle key={i} cx={x} cy={y} r={4} fill={Colors.skyBlue} />;
-      })}
-    </Svg>
+    <View style={styles.donutContainer}>
+      <Svg width={240} height={240}>
+        {segments.map((seg) => {
+          const pathD = getArcPath(cx, cy, radius, seg.startAngle, seg.endAngle);
+          const bubblePos = polarToCartesian(cx, cy, radius, seg.midAngle);
+          
+          return (
+            <React.Fragment key={seg.key}>
+              <Path
+                d={pathD}
+                fill="none"
+                stroke={seg.color}
+                strokeWidth={strokeWidth}
+                strokeLinecap="round"
+              />
+              <Circle
+                cx={bubblePos.x}
+                cy={bubblePos.y}
+                r={16}
+                fill={Colors.polarWhite}
+                stroke={Colors.carbonBlack}
+                strokeWidth={1.5}
+              />
+              <SvgText
+                x={bubblePos.x}
+                y={bubblePos.y + 4.5}
+                fontSize={13}
+                textAnchor="middle"
+              >
+                {seg.emoji}
+              </SvgText>
+            </React.Fragment>
+          );
+        })}
+      </Svg>
+      
+      {topSpender && (
+        <View style={styles.donutCenter}>
+          <Text style={styles.centerEmoji}>{topSpender.emoji}</Text>
+          <Text style={styles.centerLabel} numberOfLines={1}>{topSpender.label}</Text>
+          <Text style={styles.centerAmount}>₹{topSpender.spent.toLocaleString('en-IN')}</Text>
+          <Text style={styles.centerSub}>Top Spender</Text>
+        </View>
+      )}
+    </View>
   );
 }
 
 export default function ReportsScreen() {
   const [period, setPeriod] = useState<Period>('month');
   const { expenses, loading } = useExpenses(500);
+  const { wallets } = useWallets();
+
+  const walletMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    wallets.forEach((w) => {
+      map[w.id] = w.name;
+    });
+    return map;
+  }, [wallets]);
 
   const now = new Date();
   const filtered = useMemo(() => {
@@ -100,24 +169,22 @@ export default function ReportsScreen() {
   const totalSpent = filtered.reduce((s, e) => s + e.amount, 0);
   const totalIncome = income.reduce((s, e) => s + e.amount, 0);
 
-  // Week chart data
-  const weekDays = getWeekDays();
-  const chartData = weekDays.map(({ date }) => {
-    const d = date.toDateString();
-    return filtered
-      .filter((e) => e.date.toDate().toDateString() === d)
-      .reduce((s, e) => s + e.amount, 0);
-  });
+
 
   // Category breakdown
   const catSpend: Record<string, number> = {};
   filtered.forEach((e) => {
     catSpend[e.category] = (catSpend[e.category] ?? 0) + e.amount;
   });
-  const catRows = CATEGORIES
-    .map((c) => ({ ...c, spent: catSpend[c.key] ?? 0 }))
-    .filter((c) => c.spent > 0)
-    .sort((a, b) => b.spent - a.spent);
+  const catRows = useMemo(() => {
+    return Object.keys(catSpend)
+      .map((key) => {
+        const def = getCategoryDef(key);
+        return { ...def, spent: catSpend[key] };
+      })
+      .filter((c) => c.spent > 0)
+      .sort((a, b) => b.spent - a.spent);
+  }, [catSpend]);
   const maxCatSpend = Math.max(...catRows.map((c) => c.spent), 1);
 
   const handleExport = async () => {
@@ -127,31 +194,6 @@ export default function ReportsScreen() {
     } catch (e: any) {
       Toast.show({ type: 'error', text1: 'Export failed', text2: e.message });
     }
-  };
-
-  const handleDelete = (id: string, walletId: string, amount: number, type: string) => {
-    Alert.alert(
-      'Delete entry',
-      'Are you sure you want to delete this transaction? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteDoc(doc(db, 'expenses', id));
-              // Reverse wallet balance
-              const delta = type === 'expense' ? amount : -amount;
-              await updateDoc(doc(db, 'wallets', walletId), { balance: increment(delta) });
-              Toast.show({ type: 'success', text1: 'Deleted' });
-            } catch (e: any) {
-              Toast.show({ type: 'error', text1: 'Error', text2: e.message });
-            }
-          },
-        },
-      ]
-    );
   };
 
   // All entries (not just expenses)
@@ -207,27 +249,16 @@ export default function ReportsScreen() {
             </View>
           </View>
 
-          {/* Trend chart */}
-          <View style={styles.chartCard}>
-            <Text style={styles.chartTitle}>Spending Trend</Text>
-            {chartData.every((v) => v === 0) ? (
-              <Text style={styles.noDataText}>No data for this period.</Text>
-            ) : (
-              <>
-                <SpendingLineChart data={chartData} />
-                <View style={styles.axisLabels}>
-                  {weekDays.map(({ label }, i) => (
-                    <Text key={i} style={styles.axisLabel}>{label}</Text>
-                  ))}
-                </View>
-              </>
-            )}
-          </View>
+
 
           {/* Category breakdown */}
           {catRows.length > 0 && (
             <View style={styles.chartCard}>
               <Text style={styles.chartTitle}>By Category</Text>
+              
+              {/* Circular Spender Donut Chart */}
+              <CategoryDonutChart catRows={catRows} />
+
               {catRows.map((c) => (
                 <View key={c.key} style={styles.catRow}>
                   <Text style={styles.catRowLabel}>{c.emoji} {c.label}</Text>
@@ -264,33 +295,29 @@ export default function ReportsScreen() {
               <Text style={styles.chartTitle}>All Entries</Text>
               {allFiltered.map((e) => {
                 const cat = getCategoryDef(e.category);
-                const isExp = e.type === 'expense';
+                const walletName = walletMap[e.walletId] ?? 'Wallet';
                 const dateStr = e.date.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
                 return (
-                  <View key={e.id} style={styles.entryRow}>
+                  <TouchableOpacity
+                    key={e.id}
+                    style={styles.entryRow}
+                    onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any)}
+                    activeOpacity={0.65}
+                  >
                     <View style={styles.entryIcon}>
-                      <Text style={styles.entryEmoji}>{cat.emoji}</Text>
+                      <Text style={{ fontSize: 18 }}>{cat.emoji}</Text>
                     </View>
                     <View style={styles.entryInfo}>
                       <Text style={styles.entryCat}>{cat.label}</Text>
-                      <Text style={styles.entryDate}>{dateStr}{e.note ? ` · ${e.note}` : ''}</Text>
+                      <Text style={styles.entryWallet}>{walletName}</Text>
                     </View>
-                    <Text style={[styles.entryAmount, { color: isExp ? Colors.expense : Colors.income }]}>
-                      {isExp ? '−' : '+'}₹{e.amount.toLocaleString('en-IN')}
-                    </Text>
-                    <TouchableOpacity
-                      style={styles.entryAction}
-                      onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any)}
-                    >
-                      <Text style={styles.entryActionText}>✏️</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.entryAction}
-                      onPress={() => handleDelete(e.id, e.walletId, e.amount, e.type)}
-                    >
-                      <Text style={styles.entryActionText}>🗑️</Text>
-                    </TouchableOpacity>
-                  </View>
+                    <View style={styles.entryRight}>
+                      <Text style={[styles.entryAmount, { color: e.type === 'income' ? Colors.incomeText : e.type === 'savings' ? Colors.savingsText : Colors.expenseText }]}>
+                        {e.type === 'income' ? '+' : '−'}₹{e.amount.toLocaleString('en-IN')}
+                      </Text>
+                      <Text style={styles.entryTime}>{dateStr}</Text>
+                    </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
@@ -398,24 +425,78 @@ const styles = StyleSheet.create({
   emptyText: { ...Typography.body, fontSize: FontSize.base, color: Colors.mutedStone, textAlign: 'center' },
   // Entry rows
   entryRow: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingVertical: Spacing.sm, gap: Spacing.sm,
-    borderBottomWidth: 1, borderBottomColor: Colors.ghostGray,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ghostGray,
+    gap: Spacing.md,
   },
   entryIcon: {
-    width: 36, height: 36, borderRadius: 10,
+    width: 38, height: 38,
     backgroundColor: Colors.ghostGray,
-    alignItems: 'center', justifyContent: 'center',
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  entryEmoji: { fontSize: 18 },
   entryInfo: { flex: 1 },
-  entryCat: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.carbonBlack },
-  entryDate: { ...Typography.body, fontSize: FontSize.xs, color: Colors.mutedStone },
-  entryAmount: { ...Typography.bodyBold, fontSize: FontSize.sm },
-  entryAction: {
-    width: 32, height: 32, borderRadius: 8,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: Colors.ghostGray,
+  entryCat: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
   },
-  entryActionText: { fontSize: 14 },
+  entryWallet: {
+    ...Typography.body,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+    marginTop: 2,
+  },
+  entryRight: { alignItems: 'flex-end' },
+  entryAmount: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.base,
+  },
+  entryTime: {
+    ...Typography.body,
+    fontSize: FontSize.xs,
+    color: Colors.mutedStone,
+    marginTop: 2,
+  },
+  donutContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: Spacing.lg,
+    position: 'relative',
+    height: 240,
+  },
+  donutCenter: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 130,
+    height: 130,
+  },
+  centerEmoji: {
+    fontSize: 24,
+    marginBottom: 2,
+  },
+  centerLabel: {
+    ...Typography.bodyMedium,
+    fontSize: FontSize.xs,
+    color: Colors.mutedStone,
+    textAlign: 'center',
+  },
+  centerAmount: {
+    ...Typography.heading,
+    fontSize: FontSize.xl,
+    color: Colors.carbonBlack,
+    marginVertical: 2,
+  },
+  centerSub: {
+    ...Typography.bodyBold,
+    fontSize: 8,
+    color: Colors.mutedStone,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
 });

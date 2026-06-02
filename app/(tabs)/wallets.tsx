@@ -19,7 +19,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useWallets } from '../../hooks/useWallets';
 import { useMonthlyExpenses } from '../../hooks/useExpenses';
 import {
-  Colors, FontSize, Radius, Spacing, Typography, WalletColors,
+  Colors, FontSize, Radius, Spacing, Typography, getWalletColors,
 } from '../../constants/theme';
 import { Wallet } from '../../types/models';
 import { BigWalletSkeleton } from '../../components/Skeleton';
@@ -36,13 +36,11 @@ function BigWalletCard({
   spentThisMonth: number;
   onLongPress: () => void;
 }) {
-  const colors = WalletColors[wallet.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+  const colors = getWalletColors(wallet.type, wallet.bankName);
   const isLight = wallet.type !== 'credit';
   const icon = wallet.type === 'cash' ? '💵'
     : wallet.type === 'credit' ? '💳'
-    : wallet.type === 'upi-gpay' ? '📱'
-    : wallet.type === 'upi-phonepe' ? '📲'
-    : '📳';
+    : '🏦';
 
   return (
     <TouchableOpacity
@@ -194,7 +192,9 @@ export default function WalletsScreen() {
               // Delete the wallet itself
               batch.delete(doc(db, 'wallets', w.id));
               await batch.commit();
-              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              try {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch (e) {}
               Toast.show({ type: 'success', text1: `"${w.name}" deleted` });
             } catch (err: any) {
               Toast.show({ type: 'error', text1: 'Delete failed', text2: err.message });
@@ -217,7 +217,9 @@ export default function WalletsScreen() {
       });
       await batch.commit();
       await updateDoc(doc(db, 'users', user.uid), { defaultWalletId: w.id });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {}
       Toast.show({ type: 'success', text1: `"${w.name}" is now your default` });
     } catch (err: any) {
       Toast.show({ type: 'error', text1: 'Update failed', text2: err.message });

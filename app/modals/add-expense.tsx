@@ -2,7 +2,7 @@
 //  SPENDNOT — Add Expense / Income Modal
 //  app/modals/add-expense.tsx
 // ─────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
@@ -11,10 +11,12 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
-  collection, addDoc, doc, updateDoc, increment, Timestamp,
+  collection, addDoc, doc, updateDoc, increment, Timestamp, getDoc, arrayUnion,
 } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
+import { useAuth } from '../../context/AuthContext';
 import { useWallets } from '../../hooks/useWallets';
+import { useExpenses } from '../../hooks/useExpenses';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
   CATEGORIES, CategoryDef, WalletColors,
@@ -23,55 +25,146 @@ import { TransactionType } from '../../types/models';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 
+const formatDateString = (d: Date) => {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const parseDateString = (str: string): Date | null => {
+  const parts = str.split('-');
+  if (parts.length !== 3) return null;
+  const yyyy = parseInt(parts[0], 10);
+  const mm = parseInt(parts[1], 10) - 1;
+  const dd = parseInt(parts[2], 10);
+  if (isNaN(yyyy) || isNaN(mm) || isNaN(dd)) return null;
+  const d = new Date(yyyy, mm, dd);
+  if (d.getFullYear() !== yyyy || d.getMonth() !== mm || d.getDate() !== dd) return null;
+  return d;
+};
+
 export default function AddExpenseModal() {
   const { wallets } = useWallets();
   const { bottom } = useSafeAreaInsets();
+  const { expenses } = useExpenses(100); // Load last 100 transactions for frequency sorting
+  const { user } = useAuth();
+  const amountRef = React.useRef<TextInput>(null);
 
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('');
-  const [walletId, setWalletId] = useState<string>(
-    wallets.find((w) => w.isDefault)?.id ?? wallets[0]?.id ?? '',
-  );
+  const [walletId, setWalletId] = useState<string>('');
   const [category, setCategory] = useState<string>('food');
   const [note, setNote] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
+  const [dateMode, setDateMode] = useState<'today' | 'yesterday' | 'custom'>('today');
+  const [customDateStr, setCustomDateStr] = useState(formatDateString(new Date()));
   const [saving, setSaving] = useState(false);
 
-  // Custom category state
-  const [customCategories, setCustomCategories] = useState<CategoryDef[]>([]);
+  // Custom category state persisted in Firestore
+  const [dbCustomCats, setDbCustomCats] = useState<string[]>([]);
   const [showAddCat, setShowAddCat] = useState(false);
   const [newEmoji, setNewEmoji] = useState('');
   const [newLabel, setNewLabel] = useState('');
 
-  const allCategories = [...CATEGORIES, ...customCategories];
+  // Set default wallet when loaded
+  useEffect(() => {
+    if (wallets.length > 0 && !walletId) {
+      const def = wallets.find((w) => w.isDefault)?.id ?? wallets[0]?.id;
+      if (def) setWalletId(def);
+    }
+  }, [wallets, walletId]);
 
-  const user = auth.currentUser!;
+  // Load custom categories from Firestore
+  useEffect(() => {
+    if (!user) return;
+    getDoc(doc(db, 'users', user.uid)).then((snap) => {
+      if (snap.exists() && snap.data()?.customCategories) {
+        setDbCustomCats(snap.data().customCategories);
+      }
+    });
+  }, [user]);
 
-  const handleAddCustomCategory = () => {
+  const parsedCustomCategories = useMemo(() => {
+    return dbCustomCats.map((item) => {
+      const [emoji, ...rest] = item.split(':');
+      return { key: item, label: rest.join(':'), emoji } as CategoryDef;
+    });
+  }, [dbCustomCats]);
+
+  const allCategories = useMemo(() => {
+    return [...CATEGORIES, ...parsedCustomCategories];
+  }, [parsedCustomCategories]);
+
+  // Sort categories dynamically by usage frequency
+  const sortedCategories = useMemo(() => {
+    const counts: Record<string, number> = {};
+    expenses.forEach((e) => {
+      counts[e.category] = (counts[e.category] ?? 0) + 1;
+    });
+
+    return [...allCategories].sort((a, b) => {
+      const countA = counts[a.key] ?? 0;
+      const countB = counts[b.key] ?? 0;
+      if (countA !== countB) return countB - countA;
+      return 0; // maintain default ordering for ties
+    });
+  }, [allCategories, expenses]);
+
+  const handleAddCustomCategory = async () => {
+    if (!user) return;
     const emoji = newEmoji.trim() || '⭐';
     const label = newLabel.trim();
-    if (!label) { Alert.alert('Name required', 'Please enter a category name.'); return; }
+    if (!label) {
+      Toast.show({ type: 'error', text1: 'Name required', text2: 'Please enter a category name.' });
+      return;
+    }
     const key = `${emoji}:${label}`;
-    const newCat: CategoryDef = { key, label, emoji };
-    setCustomCategories((prev) => [...prev, newCat]);
-    setCategory(key);
-    setNewEmoji('');
-    setNewLabel('');
-    setShowAddCat(false);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    try {
+      // Persist custom category to user profile in Firestore
+      await updateDoc(doc(db, 'users', user.uid), {
+        customCategories: arrayUnion(key),
+      });
+
+      setDbCustomCats((prev) => [...prev, key]);
+      setCategory(key);
+      setNewEmoji('');
+      setNewLabel('');
+      setShowAddCat(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Error', text2: err.message ?? 'Could not save category.' });
+    }
   };
 
   const handleSave = async () => {
+    if (!user) return;
     const amt = parseFloat(amount.replace(/,/g, ''));
     if (!amt || amt <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid amount.'); return;
+      Toast.show({ type: 'error', text1: 'Invalid amount', text2: 'Please enter a valid amount.' });
+      return;
     }
     if (!walletId) {
-      Alert.alert('No wallet', 'Please select a wallet.'); return;
+      Toast.show({ type: 'error', text1: 'No wallet', text2: 'Please select a wallet.' });
+      return;
     }
 
     setSaving(true);
     try {
+      let finalDate = new Date();
+      if (dateMode === 'yesterday') {
+        finalDate = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      } else if (dateMode === 'custom') {
+        const parsed = parseDateString(customDateStr.trim());
+        if (!parsed) {
+          Toast.show({ type: 'error', text1: 'Invalid date', text2: 'Please use YYYY-MM-DD format.' });
+          setSaving(false);
+          return;
+        }
+        finalDate = parsed;
+      }
+
       await addDoc(collection(db, 'expenses'), {
         uid: user.uid,
         walletId,
@@ -79,25 +172,31 @@ export default function AddExpenseModal() {
         category,
         amount: amt,
         note: note.trim() || null,
-        date: Timestamp.now(),
+        date: Timestamp.fromDate(finalDate),
         isRecurring,
         createdAt: Timestamp.now(),
       });
 
-      const delta = type === 'expense' ? -amt : amt;
+      const delta = type === 'income' ? amt : -amt;
       await updateDoc(doc(db, 'wallets', walletId), {
         balance: increment(delta),
       });
 
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {}
       Toast.show({
         type: 'success',
-        text1: `${type === 'expense' ? 'Expense' : 'Income'} saved ✓`,
+        text1: `${type.charAt(0).toUpperCase() + type.slice(1)} saved ✓`,
         text2: `₹${amt.toLocaleString('en-IN')}`,
       });
-      router.back();
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (err: any) {
-      Alert.alert('Error', err.message ?? 'Could not save. Please try again.');
+      Toast.show({ type: 'error', text1: 'Error', text2: err.message ?? 'Could not save. Please try again.' });
     } finally {
       setSaving(false);
     }
@@ -110,9 +209,23 @@ export default function AddExpenseModal() {
           {/* Drag handle */}
           <View style={styles.dragHandle} />
 
-          {/* Expense / Income pill selector */}
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.headerTitle}>Add Transaction</Text>
+            <TouchableOpacity onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)');
+              }
+            }}>
+              <Text style={styles.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Expense / Income / Savings pill selector */}
           <View style={styles.pillRow}>
-            {(['expense', 'income'] as TransactionType[]).map((t) => (
+            {(['expense', 'income', 'savings'] as TransactionType[]).map((t) => (
               <TouchableOpacity
                 key={t}
                 style={[styles.pill, type === t && styles.pillActive]}
@@ -129,9 +242,25 @@ export default function AddExpenseModal() {
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* Amount */}
             <Text style={styles.howMuch}>How much?</Text>
-            <View style={styles.amountRow}>
+            <TouchableOpacity
+              style={styles.amountRow}
+              activeOpacity={1}
+              onPress={() => {
+                if (amountRef.current) {
+                  if (amountRef.current.isFocused()) {
+                    amountRef.current.blur();
+                    setTimeout(() => {
+                      amountRef.current?.focus();
+                    }, 50);
+                  } else {
+                    amountRef.current.focus();
+                  }
+                }
+              }}
+            >
               <Text style={styles.amountCurrency}>₹</Text>
               <TextInput
+                ref={amountRef}
                 style={styles.amountInput}
                 value={amount}
                 onChangeText={setAmount}
@@ -141,7 +270,7 @@ export default function AddExpenseModal() {
                 maxLength={10}
                 autoFocus
               />
-            </View>
+            </TouchableOpacity>
 
             {/* Wallet selector */}
             <Text style={styles.fieldLabel}>From wallet</Text>
@@ -166,10 +295,14 @@ export default function AddExpenseModal() {
               })}
             </ScrollView>
 
-            {/* Category grid */}
+            {/* Category Scroll Row */}
             <Text style={styles.fieldLabel}>Category</Text>
-            <View style={styles.catGrid}>
-              {allCategories.map((c) => {
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.catScrollRow}
+            >
+              {sortedCategories.map((c) => {
                 const selected = category === c.key;
                 return (
                   <TouchableOpacity
@@ -183,7 +316,9 @@ export default function AddExpenseModal() {
                       </View>
                     )}
                     <Text style={styles.catEmoji}>{c.emoji}</Text>
-                    <Text style={[styles.catLabel, selected && styles.catLabelActive]}>{c.label}</Text>
+                    <Text style={[styles.catLabel, selected && styles.catLabelActive]} numberOfLines={1}>
+                      {c.label}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -195,7 +330,7 @@ export default function AddExpenseModal() {
                 <Text style={styles.catAddPlus}>+</Text>
                 <Text style={styles.catAddLabel}>New</Text>
               </TouchableOpacity>
-            </View>
+            </ScrollView>
 
             {/* Note */}
             <Text style={styles.fieldLabel}>Note</Text>
@@ -207,6 +342,37 @@ export default function AddExpenseModal() {
               onChangeText={setNote}
               maxLength={100}
             />
+
+            {/* Date Selector */}
+            <Text style={styles.fieldLabel}>Date</Text>
+            <View style={styles.datePillRow}>
+              {(['today', 'yesterday', 'custom'] as const).map((mode) => (
+                <TouchableOpacity
+                  key={mode}
+                  style={[styles.datePill, dateMode === mode && styles.datePillActive]}
+                  onPress={() => {
+                    setDateMode(mode);
+                    Haptics.selectionAsync();
+                  }}
+                >
+                  {dateMode === mode && <Text style={styles.pillTick}>✓ </Text>}
+                  <Text style={[styles.datePillText, dateMode === mode && styles.datePillTextActive]}>
+                    {mode === 'today' ? 'Today' : mode === 'yesterday' ? 'Yesterday' : 'Custom'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {dateMode === 'custom' && (
+              <TextInput
+                style={styles.customDateInput}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={Colors.mutedStone}
+                value={customDateStr}
+                onChangeText={setCustomDateStr}
+                maxLength={10}
+              />
+            )}
 
             {/* Recurring pill selector */}
             <Text style={styles.fieldLabel}>Frequency</Text>
@@ -303,6 +469,14 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     marginBottom: Spacing.lg,
   },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.base,
+  },
+  headerTitle: { ...Typography.bodyBold, fontSize: FontSize.xl, color: Colors.carbonBlack },
+  cancelText: { ...Typography.bodyMedium, fontSize: FontSize.base, color: Colors.mutedStone },
   // Pill selectors (expense/income + recurring)
   pillRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.base },
   pill: {
@@ -346,13 +520,17 @@ const styles = StyleSheet.create({
   walletPillSelected: { borderColor: Colors.carbonBlack },
   walletTick: { ...Typography.bodyBold, fontSize: FontSize.sm },
   walletPillText: { ...Typography.bodyBold, fontSize: FontSize.sm },
-  // Category grid
-  catGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg },
+  // Category Scroll Row
+  catScrollRow: { gap: Spacing.sm, paddingBottom: 4, marginBottom: Spacing.lg },
   catCard: {
     backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.lg, padding: Spacing.md,
-    alignItems: 'center', width: '22%', aspectRatio: 1,
-    justifyContent: 'center', gap: 4,
+    borderRadius: Radius.lg,
+    padding: Spacing.sm,
+    alignItems: 'center',
+    width: 76,
+    height: 76,
+    justifyContent: 'center',
+    gap: 4,
     overflow: 'hidden',
   },
   catCardActive: { backgroundColor: Colors.carbonBlack },
@@ -381,6 +559,20 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm, marginBottom: Spacing.sm,
   },
   saveBtnText: { ...Typography.bodyBold, fontSize: FontSize.lg, color: Colors.polarWhite },
+  datePillRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.base },
+  datePill: {
+    flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    borderRadius: Radius.full, paddingHorizontal: Spacing.base, paddingVertical: 10,
+    backgroundColor: Colors.ghostGray,
+  },
+  datePillActive: { backgroundColor: Colors.carbonBlack },
+  datePillText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.mutedStone },
+  datePillTextActive: { color: Colors.polarWhite },
+  customDateInput: {
+    backgroundColor: Colors.ghostGray, borderRadius: Radius.md,
+    paddingHorizontal: Spacing.base, paddingVertical: 12,
+    ...Typography.bodyMedium, fontSize: FontSize.base, color: Colors.carbonBlack, marginBottom: Spacing.base,
+  },
   // Custom category modal
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.4)',

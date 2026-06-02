@@ -10,13 +10,15 @@ import {
   Pressable,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 import {
-  doc, updateDoc, setDoc, Timestamp, collection, addDoc,
+  doc, updateDoc, setDoc, Timestamp, collection, addDoc, deleteDoc,
 } from 'firebase/firestore';
 import { useBudgets } from '../../hooks/useBudgets';
 import { useMonthlyExpenses } from '../../hooks/useExpenses';
 import { useRecurring } from '../../hooks/useRecurring';
 import { useWallets } from '../../hooks/useWallets';
+import { useEmis } from '../../hooks/useEmis';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
@@ -28,7 +30,7 @@ import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 import { BudgetCardSkeleton } from '../../components/Skeleton';
 
-type BudgetTab = 'budgets' | 'recurring';
+type BudgetTab = 'budgets' | 'recurring' | 'emis';
 type Period = 'weekly' | 'monthly';
 type Frequency = 'weekly' | 'monthly' | 'yearly';
 
@@ -85,7 +87,9 @@ function RecurringCard({ item, walletName }: { item: Recurring; walletName: stri
         nextDueDate: Timestamp.fromDate(next),
       });
 
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {}
       Toast.show({ type: 'success', text1: 'Marked as paid ✓', text2: item.name });
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -195,7 +199,9 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
         period,
         createdAt: Timestamp.now(),
       });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {}
       Toast.show({ type: 'success', text1: 'Budget set ✓' });
       setLimit('');
       onClose();
@@ -313,7 +319,9 @@ function AddRecurringSheet({ visible, onClose }: { visible: boolean; onClose: ()
         isAutoDeduct: false,
         createdAt: Timestamp.now(),
       });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      } catch (e) {}
       Toast.show({ type: 'success', text1: 'Recurring added ✓', text2: name.trim() });
       setName(''); setAmount('');
       onClose();
@@ -505,6 +513,148 @@ const sheetStyles = StyleSheet.create({
   saveBtnText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
 });
 
+// ── EMI Card ─────────────────────────────────
+function EmiCard({ item, walletName }: { item: any; walletName: string }) {
+  const cat = getCategoryDef(item.category);
+  const totalPaid = item.currentInstallment * item.monthlyAmount;
+  const totalRemaining = (item.totalInstallments - item.currentInstallment) * item.monthlyAmount;
+  
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Delete EMI Plan',
+      'Are you sure you want to stop tracking this EMI? Existing logged transactions will not be deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteDoc(doc(db, 'emis', item.id));
+              Toast.show({ type: 'success', text1: 'EMI deleted ✓' });
+            } catch (err: any) {
+              Alert.alert('Error', err.message);
+            } finally {
+              setDeleting(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  return (
+    <View style={emiStyles.card}>
+      <View style={emiStyles.cardTop}>
+        <View>
+          <Text style={emiStyles.name}>{item.name}</Text>
+          <Text style={emiStyles.sub}>
+            {cat.emoji} {cat.label} · {walletName}
+          </Text>
+        </View>
+        <TouchableOpacity onPress={handleDelete} disabled={deleting}>
+          <Text style={emiStyles.deleteText}>🗑️</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={emiStyles.amountRow}>
+        <Text style={emiStyles.amount}>₹{item.monthlyAmount.toLocaleString('en-IN')}/mo</Text>
+        <Text style={emiStyles.due}>Due Day: {item.startDay}</Text>
+      </View>
+
+      <View style={emiStyles.progressContainer}>
+        <ProgressBar value={item.currentInstallment} max={item.totalInstallments} color={Colors.periwinkle} />
+        <View style={emiStyles.progressMeta}>
+          <Text style={emiStyles.metaText}>
+            Installment {item.currentInstallment} of {item.totalInstallments} paid
+          </Text>
+          <Text style={emiStyles.metaText}>
+            ₹{totalRemaining.toLocaleString('en-IN')} remaining
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// ── EMI Tab Content ──────────────────────────
+function EmiTabContent({ walletMap }: { walletMap: Record<string, string> }) {
+  const { active, completed, loading } = useEmis();
+
+  if (loading) {
+    return <ActivityIndicator color={Colors.carbonBlack} style={{ marginTop: 40 }} />;
+  }
+
+  if (active.length === 0 && completed.length === 0) {
+    return (
+      <View style={styles.emptyBox}>
+        <Text style={styles.emptyEmoji}>💳</Text>
+        <Text style={styles.emptyTitle}>No EMI plans</Text>
+        <Text style={styles.emptyText}>Track credit card installments and loans.</Text>
+        <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/modals/add-emi')}>
+          <Text style={styles.emptyBtnText}>Add First EMI</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      {active.length > 0 && (
+        <>
+          <Text style={styles.sectionLabel}>Active Installments</Text>
+          {active.map((item) => (
+            <EmiCard key={item.id} item={item} walletName={walletMap[item.walletId] ?? '—'} />
+          ))}
+        </>
+      )}
+
+      {completed.length > 0 && (
+        <>
+          <Text style={[styles.sectionLabel, { marginTop: Spacing.lg, color: Colors.mutedStone }]}>Completed</Text>
+          {completed.map((item) => (
+            <EmiCard key={item.id} item={item} walletName={walletMap[item.walletId] ?? '—'} />
+          ))}
+        </>
+      )}
+    </View>
+  );
+}
+
+const emiStyles = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.ghostGray,
+    padding: Spacing.base,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  name: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.carbonBlack },
+  sub: { ...Typography.body, fontSize: FontSize.sm, color: Colors.mutedStone, marginTop: 2 },
+  deleteText: { fontSize: 16, opacity: 0.7, padding: 2 },
+  amountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.xs,
+  },
+  amount: { ...Typography.bodyBold, fontSize: FontSize.md, color: Colors.carbonBlack },
+  due: { ...Typography.bodyBold, fontSize: FontSize.xs, color: Colors.mutedStone },
+  progressContainer: { gap: Spacing.xs, marginTop: Spacing.xs },
+  progressMeta: { flexDirection: 'row', justifyContent: 'space-between' },
+  metaText: { ...Typography.bodyMedium, fontSize: 11, color: Colors.mutedStone },
+});
+
 // ── Main Screen ──────────────────────────────
 export default function BudgetsScreen() {
   const [tab, setTab] = useState<BudgetTab>('budgets');
@@ -531,11 +681,15 @@ export default function BudgetsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>
-          {tab === 'budgets' ? 'Budgets' : 'Recurring'}
+          {tab === 'budgets' ? 'Budgets' : tab === 'recurring' ? 'Recurring' : 'EMIs'}
         </Text>
         <TouchableOpacity
           style={styles.addBtn}
-          onPress={() => tab === 'budgets' ? setShowAddBudget(true) : setShowAddRecurring(true)}
+          onPress={() => {
+            if (tab === 'budgets') setShowAddBudget(true);
+            else if (tab === 'recurring') setShowAddRecurring(true);
+            else router.push('/modals/add-emi');
+          }}
         >
           <Text style={styles.addBtnText}>+ Add</Text>
         </TouchableOpacity>
@@ -557,6 +711,14 @@ export default function BudgetsScreen() {
         >
           <Text style={[styles.subTabText, tab === 'recurring' && styles.subTabTextActive]}>
             Recurring
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.subTab, tab === 'emis' && styles.subTabActive]}
+          onPress={() => setTab('emis')}
+        >
+          <Text style={[styles.subTabText, tab === 'emis' && styles.subTabTextActive]}>
+            EMIs
           </Text>
         </TouchableOpacity>
       </View>
@@ -675,6 +837,11 @@ export default function BudgetsScreen() {
               </>
             )}
           </>
+        )}
+
+        {/* ── EMIS TAB ── */}
+        {tab === 'emis' && (
+          <EmiTabContent walletMap={walletMap} />
         )}
       </ScrollView>
 

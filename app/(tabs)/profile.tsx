@@ -2,23 +2,24 @@
 //  SPENDNOT — Profile & Settings Screen (Screen 8)
 //  app/(tabs)/profile.tsx
 // ─────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Alert, Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { signOut } from 'firebase/auth';
-import { doc, deleteDoc, collection, getDocs, query, where, writeBatch } from 'firebase/firestore';
+import { signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, deleteDoc, collection, getDocs, query, where, writeBatch, updateDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useWallets } from '../../hooks/useWallets';
 import {
-  Colors, FontSize, Radius, Spacing, Typography,
+  Colors, FontSize, Radius, Spacing, Typography, CATEGORIES,
 } from '../../constants/theme';
 import Toast from 'react-native-toast-message';
 import { exportToExcel } from '../../lib/export';
 import { useExpenses } from '../../hooks/useExpenses';
+import { confirmAction } from '../../lib/confirm';
 
 function SectionLabel({ label }: { label: string }) {
   return (
@@ -33,15 +34,17 @@ function SettingsRow({
   right,
   danger = false,
   onPress,
+  isLast = false,
 }: {
   label: string;
   right?: React.ReactNode;
   danger?: boolean;
   onPress?: () => void;
+  isLast?: boolean;
 }) {
   return (
     <TouchableOpacity
-      style={styles.settingsRow}
+      style={[styles.settingsRow, isLast && { borderBottomWidth: 0 }]}
       onPress={onPress}
       activeOpacity={onPress ? 0.6 : 1}
     >
@@ -58,8 +61,6 @@ export default function ProfileScreen() {
   const { user } = useAuth();
   const { wallets } = useWallets();
   const { expenses } = useExpenses(1000);
-  const [notifs, setNotifs] = useState(true);
-
   const displayName = user?.displayName ?? 'User';
   const initials = displayName
     .split(' ')
@@ -71,79 +72,74 @@ export default function ProfileScreen() {
   const defaultWallet = wallets.find((w) => w.isDefault);
 
   const handleSignOut = () => {
-    Alert.alert('Sign out', 'Are you sure you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => signOut(auth) },
-    ]);
+    confirmAction(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      () => signOut(auth),
+      'Sign Out'
+    );
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
+    confirmAction(
       'Delete Account',
       'This will permanently delete your account and ALL your data (expenses, wallets, budgets). This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Forever',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user) return;
-            try {
-              // Delete all user data first
-              const batch = writeBatch(db);
-              const colls = ['expenses', 'wallets', 'budgets', 'recurring'];
-              for (const coll of colls) {
-                const snap = await getDocs(
-                  query(collection(db, coll), where('uid', '==', user.uid)),
-                );
-                snap.docs.forEach((d) => batch.delete(d.ref));
-              }
-              // Delete user doc
-              batch.delete(doc(db, 'users', user.uid));
-              await batch.commit();
-              // Delete the Firebase Auth account
-              await user.delete();
-              // Auth state change will redirect to login automatically
-            } catch (err: any) {
-              if (err.code === 'auth/requires-recent-login') {
-                Alert.alert(
-                  'Re-authentication required',
-                  'Please sign out and sign back in, then try deleting your account again.',
-                );
-              } else {
-                Alert.alert('Error', err.message);
-              }
-            }
-          },
-        },
-      ],
+      async () => {
+        if (!user) return;
+        try {
+          // Delete all user data first
+          const batch = writeBatch(db);
+          const colls = ['expenses', 'wallets', 'budgets', 'recurring'];
+          for (const coll of colls) {
+            const snap = await getDocs(
+              query(collection(db, coll), where('uid', '==', user.uid)),
+            );
+            snap.docs.forEach((d) => batch.delete(d.ref));
+          }
+          // Delete user doc
+          batch.delete(doc(db, 'users', user.uid));
+          await batch.commit();
+          // Delete the Firebase Auth account
+          await user.delete();
+        } catch (err: any) {
+          if (err.code === 'auth/requires-recent-login') {
+            confirmAction(
+              'Re-authentication required',
+              'Please sign out and sign back in, then try deleting your account again.',
+              () => signOut(auth),
+              'Sign Out'
+            );
+          } else {
+            Toast.show({ type: 'error', text1: 'Error', text2: err.message });
+          }
+        }
+      },
+      'Delete Forever'
     );
   };
 
   const handleClearData = () => {
-    Alert.alert(
+    confirmAction(
       'Clear All Data',
       'This will permanently delete all your expenses, wallets, and budgets. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Everything',
-          style: 'destructive',
-          onPress: async () => {
-            if (!user) return;
-            const batch = writeBatch(db);
-            const colls = ['expenses', 'wallets', 'budgets', 'recurring'];
-            for (const coll of colls) {
-              const snap = await getDocs(
-                query(collection(db, coll), where('uid', '==', user.uid)),
-              );
-              snap.docs.forEach((d) => batch.delete(d.ref));
-            }
-            await batch.commit();
-            Toast.show({ type: 'success', text1: 'All data cleared.' });
-          },
-        },
-      ],
+      async () => {
+        if (!user) return;
+        try {
+          const batch = writeBatch(db);
+          const colls = ['expenses', 'wallets', 'budgets', 'recurring'];
+          for (const coll of colls) {
+            const snap = await getDocs(
+              query(collection(db, coll), where('uid', '==', user.uid)),
+            );
+            snap.docs.forEach((d) => batch.delete(d.ref));
+          }
+          await batch.commit();
+          Toast.show({ type: 'success', text1: 'All data cleared ✓' });
+        } catch (e: any) {
+          Toast.show({ type: 'error', text1: 'Error', text2: e.message });
+        }
+      },
+      'Delete Everything'
     );
   };
 
@@ -153,6 +149,20 @@ export default function ProfileScreen() {
       Toast.show({ type: 'success', text1: 'Export ready!', text2: 'Check your Files app.' });
     } catch (e: any) {
       Toast.show({ type: 'error', text1: 'Export failed', text2: e.message });
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (!user || !user.email) return;
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      Toast.show({
+        type: 'success',
+        text1: 'Reset email sent ✓',
+        text2: 'Check your inbox to change password.',
+      });
+    } catch (e: any) {
+      Toast.show({ type: 'error', text1: 'Failed to send reset email', text2: e.message });
     }
   };
 
@@ -170,9 +180,6 @@ export default function ProfileScreen() {
             <Text style={styles.userName}>{displayName}</Text>
             <Text style={styles.userEmail}>{user?.email}</Text>
           </View>
-          <TouchableOpacity>
-            <Text style={{ fontSize: 18 }}>✏️</Text>
-          </TouchableOpacity>
         </View>
 
         {/* PREFERENCES */}
@@ -184,32 +191,8 @@ export default function ProfileScreen() {
           />
           <SettingsRow
             label="Default Wallet"
-            right={
-              defaultWallet ? (
-                <View style={styles.limeDot} />
-              ) : null
-            }
-            onPress={() => {}}
-          />
-          <View style={[styles.settingsRow, { borderBottomWidth: 0 }]}>
-            <Text style={styles.settingsRowLabel}>Notifications</Text>
-            <Switch
-              value={notifs}
-              onValueChange={setNotifs}
-              trackColor={{ true: Colors.carbonBlack, false: Colors.ghostGray }}
-              thumbColor={Colors.polarWhite}
-              ios_backgroundColor={Colors.ghostGray}
-            />
-          </View>
-        </View>
-
-        {/* CATEGORIES */}
-        <SectionLabel label="CATEGORIES" />
-        <View style={styles.card}>
-          <SettingsRow
-            label="Manage Categories"
-            right={<Text style={styles.rowValue}>8 categories</Text>}
-            onPress={() => {}}
+            right={<Text style={styles.rowValue}>{defaultWallet?.name ?? 'None'}</Text>}
+            isLast={true}
           />
         </View>
 
@@ -217,26 +200,15 @@ export default function ProfileScreen() {
         <SectionLabel label="DATA" />
         <View style={styles.card}>
           <SettingsRow label="Export All Data" onPress={handleExport} />
-          <SettingsRow label="Import Data" onPress={() => {}} />
-          <SettingsRow label="Clear All Data" danger onPress={handleClearData} />
+          <SettingsRow label="Clear All Data" danger onPress={handleClearData} isLast={true} />
         </View>
 
         {/* ACCOUNT */}
         <SectionLabel label="ACCOUNT" />
         <View style={styles.card}>
-          <SettingsRow label="Change Password" onPress={() => {}} />
-          <SettingsRow
-            label="Sign Out"
-            danger
-            onPress={handleSignOut}
-          />
-          <View style={[styles.settingsRow, { borderBottomWidth: 0 }]}>
-            <TouchableOpacity onPress={handleDeleteAccount}>
-              <Text style={[styles.settingsRowLabel, { color: Colors.danger, fontSize: FontSize.md }]}>
-                Delete Account
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <SettingsRow label="Change Password" onPress={handleChangePassword} />
+          <SettingsRow label="Sign Out" danger onPress={handleSignOut} />
+          <SettingsRow label="Delete Account" danger onPress={handleDeleteAccount} isLast={true} />
         </View>
 
         <View style={{ height: 40 }} />
