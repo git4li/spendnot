@@ -71,6 +71,30 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.uid);
     }
 
+    // ── emis/{emiId} ──────────────────────────
+    match /emis/{emiId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'name', 'walletId', 'category', 'monthlyAmount', 'totalInstallments', 'currentInstallment', 'startDay', 'active', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.walletId is string
+        && request.resource.data.category is string
+        && request.resource.data.monthlyAmount is number
+        && request.resource.data.monthlyAmount > 0
+        && request.resource.data.totalInstallments is number
+        && request.resource.data.totalInstallments > 0
+        && request.resource.data.currentInstallment is number
+        && request.resource.data.currentInstallment >= 0
+        && request.resource.data.startDay is number
+        && request.resource.data.startDay >= 1
+        && request.resource.data.startDay <= 31
+        && request.resource.data.active is bool;
+      allow update: if isOwner(resource.data.uid)
+        && isOwner(request.resource.data.uid)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['uid', 'createdAt']);
+      allow delete: if isOwner(resource.data.uid);
+    }
+
     // Block all other collections
     match /{document=**} {
       allow read, write: if false;
