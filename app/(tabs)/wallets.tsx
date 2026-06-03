@@ -23,8 +23,10 @@ import {
 } from '../../constants/theme';
 import { Wallet } from '../../types/models';
 import { BigWalletSkeleton } from '../../components/Skeleton';
-import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
+import { confirmAction } from '../../lib/confirm';
+import * as Haptics from 'expo-haptics';
+
 
 // ── Wallet Card ───────────────────────────────
 function BigWalletCard({
@@ -214,73 +216,66 @@ export default function WalletsScreen() {
     const w = selectedWallet;
     setSelectedWallet(null);
 
-    Alert.alert(
+    confirmAction(
       'Delete Wallet',
       `Delete "${w.name}"? All expenses, EMIs, and recurring payments linked to this wallet will also be permanently deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const batch = writeBatch(db);
-              
-              // 1. Delete all expenses for this wallet
-              const expSnap = await getDocs(
-                query(
-                  collection(db, 'expenses'),
-                  where('uid', '==', user.uid),
-                  where('walletId', '==', w.id),
-                ),
-              );
-              expSnap.docs.forEach((d) => batch.delete(d.ref));
+      async () => {
+        try {
+          const batch = writeBatch(db);
+          
+          // 1. Delete all expenses for this wallet
+          const expSnap = await getDocs(
+            query(
+              collection(db, 'expenses'),
+              where('uid', '==', user.uid),
+              where('walletId', '==', w.id),
+            ),
+          );
+          expSnap.docs.forEach((d) => batch.delete(d.ref));
 
-              // 2. Delete all EMIs for this wallet
-              const emiSnap = await getDocs(
-                query(
-                  collection(db, 'emis'),
-                  where('uid', '==', user.uid),
-                  where('walletId', '==', w.id),
-                ),
-              );
-              emiSnap.docs.forEach((d) => batch.delete(d.ref));
+          // 2. Delete all EMIs for this wallet
+          const emiSnap = await getDocs(
+            query(
+              collection(db, 'emis'),
+              where('uid', '==', user.uid),
+              where('walletId', '==', w.id),
+            ),
+          );
+          emiSnap.docs.forEach((d) => batch.delete(d.ref));
 
-              // 3. Delete all recurring payments for this wallet
-              const recSnap = await getDocs(
-                query(
-                  collection(db, 'recurring'),
-                  where('uid', '==', user.uid),
-                  where('walletId', '==', w.id),
-                ),
-              );
-              recSnap.docs.forEach((d) => batch.delete(d.ref));
+          // 3. Delete all recurring payments for this wallet
+          const recSnap = await getDocs(
+            query(
+              collection(db, 'recurring'),
+              where('uid', '==', user.uid),
+              where('walletId', '==', w.id),
+            ),
+          );
+          recSnap.docs.forEach((d) => batch.delete(d.ref));
 
-              // 4. Delete the wallet itself
-              batch.delete(doc(db, 'wallets', w.id));
+          // 4. Delete the wallet itself
+          batch.delete(doc(db, 'wallets', w.id));
 
-              // 5. Update user's defaultWalletId if it was deleted
-              if (w.isDefault) {
-                const nextDefault = wallets.find((wl) => wl.id !== w.id);
-                if (nextDefault) {
-                  batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
-                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
-                } else {
-                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
-                }
-              }
-
-              await batch.commit();
-              try {
-                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } catch (e) {}
-              Toast.show({ type: 'success', text1: `"${w.name}" deleted` });
-            } catch (err: any) {
-              Toast.show({ type: 'error', text1: 'Delete failed', text2: err.message });
+          // 5. Update user's defaultWalletId if it was deleted
+          if (w.isDefault) {
+            const nextDefault = wallets.find((wl) => wl.id !== w.id);
+            if (nextDefault) {
+              batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
+              batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
+            } else {
+              batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
             }
-          },
-        },
-      ],
+          }
+
+          await batch.commit();
+          try {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (e) {}
+          Toast.show({ type: 'success', text1: `"${w.name}" deleted` });
+        } catch (err: any) {
+          Toast.show({ type: 'error', text1: 'Delete failed', text2: err.message });
+        }
+      }
     );
   };
 
@@ -288,94 +283,88 @@ export default function WalletsScreen() {
     if (selectedIds.size === 0 || !user) return;
     const idsToDelete = Array.from(selectedIds);
 
-    Alert.alert(
+    confirmAction(
       'Delete Wallets',
       `Delete the ${idsToDelete.length} selected wallets? All associated expenses, EMIs, and recurring payments will be permanently deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const batch = writeBatch(db);
+      async () => {
+        try {
+          const batch = writeBatch(db);
 
-              // 1. Fetch and delete expenses in chunks of 10
-              const expRefs: any[] = [];
-              for (let i = 0; i < idsToDelete.length; i += 10) {
-                const chunk = idsToDelete.slice(i, i + 10);
-                const expSnap = await getDocs(
-                  query(
-                    collection(db, 'expenses'),
-                    where('uid', '==', user.uid),
-                    where('walletId', 'in', chunk),
-                  ),
-                );
-                expRefs.push(...expSnap.docs.map(d => d.ref));
-              }
-              expRefs.forEach((ref) => batch.delete(ref));
+          // 1. Fetch and delete expenses in chunks of 10
+          const expRefs: any[] = [];
+          for (let i = 0; i < idsToDelete.length; i += 10) {
+            const chunk = idsToDelete.slice(i, i + 10);
+            const expSnap = await getDocs(
+              query(
+                collection(db, 'expenses'),
+                where('uid', '==', user.uid),
+                where('walletId', 'in', chunk),
+              ),
+            );
+            expRefs.push(...expSnap.docs.map(d => d.ref));
+          }
+          expRefs.forEach((ref) => batch.delete(ref));
 
-              // 2. Fetch and delete EMIs in chunks of 10
-              const emiRefs: any[] = [];
-              for (let i = 0; i < idsToDelete.length; i += 10) {
-                const chunk = idsToDelete.slice(i, i + 10);
-                const emiSnap = await getDocs(
-                  query(
-                    collection(db, 'emis'),
-                    where('uid', '==', user.uid),
-                    where('walletId', 'in', chunk),
-                  ),
-                );
-                emiRefs.push(...emiSnap.docs.map(d => d.ref));
-              }
-              emiRefs.forEach((ref) => batch.delete(ref));
+          // 2. Fetch and delete EMIs in chunks of 10
+          const emiRefs: any[] = [];
+          for (let i = 0; i < idsToDelete.length; i += 10) {
+            const chunk = idsToDelete.slice(i, i + 10);
+            const emiSnap = await getDocs(
+              query(
+                collection(db, 'emis'),
+                where('uid', '==', user.uid),
+                where('walletId', 'in', chunk),
+              ),
+            );
+            emiRefs.push(...emiSnap.docs.map(d => d.ref));
+          }
+          emiRefs.forEach((ref) => batch.delete(ref));
 
-              // 3. Fetch and delete recurring payments in chunks of 10
-              const recRefs: any[] = [];
-              for (let i = 0; i < idsToDelete.length; i += 10) {
-                const chunk = idsToDelete.slice(i, i + 10);
-                const recSnap = await getDocs(
-                  query(
-                    collection(db, 'recurring'),
-                    where('uid', '==', user.uid),
-                    where('walletId', 'in', chunk),
-                  ),
-                );
-                recRefs.push(...recSnap.docs.map(d => d.ref));
-              }
-              recRefs.forEach((ref) => batch.delete(ref));
+          // 3. Fetch and delete recurring payments in chunks of 10
+          const recRefs: any[] = [];
+          for (let i = 0; i < idsToDelete.length; i += 10) {
+            const chunk = idsToDelete.slice(i, i + 10);
+            const recSnap = await getDocs(
+              query(
+                collection(db, 'recurring'),
+                where('uid', '==', user.uid),
+                where('walletId', 'in', chunk),
+              ),
+            );
+            recRefs.push(...recSnap.docs.map(d => d.ref));
+          }
+          recRefs.forEach((ref) => batch.delete(ref));
 
-              // 4. Delete the wallets themselves
-              idsToDelete.forEach((id) => {
-                batch.delete(doc(db, 'wallets', id));
-              });
+          // 4. Delete the wallets themselves
+          idsToDelete.forEach((id) => {
+            batch.delete(doc(db, 'wallets', id));
+          });
 
-              // 5. Update user's defaultWalletId if it was deleted
-              const defaultWalletToDelete = wallets.find((w) => w.isDefault && idsToDelete.includes(w.id));
-              if (defaultWalletToDelete) {
-                const nextDefault = wallets.find((wl) => !idsToDelete.includes(wl.id));
-                if (nextDefault) {
-                  batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
-                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
-                } else {
-                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
-                }
-              }
-
-              await batch.commit();
-              try {
-                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } catch (e) {}
-
-              Toast.show({ type: 'success', text1: `${idsToDelete.length} wallets deleted` });
-              setIsSelectionMode(false);
-              setSelectedIds(new Set());
-            } catch (err: any) {
-              Toast.show({ type: 'error', text1: 'Deletion failed', text2: err.message });
+          // 5. Update user's defaultWalletId if it was deleted
+          const defaultWalletToDelete = wallets.find((w) => w.isDefault && idsToDelete.includes(w.id));
+          if (defaultWalletToDelete) {
+            const nextDefault = wallets.find((wl) => !idsToDelete.includes(wl.id));
+            if (nextDefault) {
+              batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
+              batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
+            } else {
+              batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
             }
-          },
-        },
-      ],
+          }
+
+          await batch.commit();
+          try {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (e) {}
+
+          Toast.show({ type: 'success', text1: `${idsToDelete.length} wallets deleted` });
+          setIsSelectionMode(false);
+          setSelectedIds(new Set());
+        } catch (err: any) {
+          Toast.show({ type: 'error', text1: 'Deletion failed', text2: err.message });
+        }
+      },
+      'Delete All'
     );
   };
 

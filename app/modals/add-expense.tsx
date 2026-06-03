@@ -51,6 +51,9 @@ export default function AddExpenseModal() {
   const { user } = useAuth();
   const amountRef = React.useRef<TextInput>(null);
 
+  const KeyboardDismissWrapper = Platform.OS === 'web' ? React.Fragment : TouchableWithoutFeedback;
+  const dismissProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
+
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('');
   const [walletId, setWalletId] = useState<string>('');
@@ -204,7 +207,8 @@ export default function AddExpenseModal() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {/* @ts-ignore */}
+      <KeyboardDismissWrapper {...dismissProps}>
         <View style={styles.sheet}>
           {/* Drag handle */}
           <View style={styles.dragHandle} />
@@ -408,7 +412,7 @@ export default function AddExpenseModal() {
             )}
           </TouchableOpacity>
         </View>
-      </TouchableWithoutFeedback>
+      </KeyboardDismissWrapper>
 
       {/* Add Custom Category Modal */}
       <Modal visible={showAddCat} transparent animationType="fade">

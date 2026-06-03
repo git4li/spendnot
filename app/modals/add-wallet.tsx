@@ -5,20 +5,21 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, ActivityIndicator, ScrollView, Switch,
+  StyleSheet, Alert, ActivityIndicator, ScrollView, Switch, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { collection, addDoc, updateDoc, deleteDoc, doc, Timestamp, writeBatch } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, Timestamp, writeBatch, getDocs, query, where } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
+import * as Haptics from 'expo-haptics';
 import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
   WalletType, getWalletColors,
 } from '../../constants/theme';
-import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
+import { confirmAction } from '../../lib/confirm';
 
 export default function AddWalletModal() {
   const { walletId } = useLocalSearchParams<{ walletId?: string }>();
@@ -171,44 +172,76 @@ export default function AddWalletModal() {
 
   const handleDelete = async () => {
     if (!isEdit || !walletId || !user) return;
-    Alert.alert(
+    confirmAction(
       'Delete Wallet',
-      'Are you sure you want to delete this wallet? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            setSaving(true);
-            try {
-              const batch = writeBatch(db);
-              batch.delete(doc(db, 'wallets', walletId));
+      'Are you sure you want to delete this wallet? All linked expenses, EMIs, and recurring payments will also be permanently deleted.',
+      async () => {
+        setSaving(true);
+        try {
+          const batch = writeBatch(db);
 
-              const wasDefault = wallets.find((w) => w.id === walletId)?.isDefault;
-              if (wasDefault) {
-                const remainingDefault = wallets.find((w) => w.id !== walletId && w.isDefault);
-                batch.update(doc(db, 'users', user.uid), {
-                  defaultWalletId: remainingDefault ? remainingDefault.id : '',
-                });
-              }
+          // 1. Delete all expenses for this wallet
+          const expSnap = await getDocs(
+            query(
+              collection(db, 'expenses'),
+              where('uid', '==', user.uid),
+              where('walletId', '==', walletId),
+            ),
+          );
+          expSnap.docs.forEach((d) => batch.delete(d.ref));
 
-              await batch.commit();
-              Toast.show({ type: 'success', text1: 'Wallet deleted ✓' });
-              
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.replace('/');
-              }
-            } catch (err: any) {
-              Toast.show({ type: 'error', text1: 'Error', text2: err.message ?? 'Could not delete wallet.' });
-            } finally {
-              setSaving(false);
+          // 2. Delete all EMIs for this wallet
+          const emiSnap = await getDocs(
+            query(
+              collection(db, 'emis'),
+              where('uid', '==', user.uid),
+              where('walletId', '==', walletId),
+            ),
+          );
+          emiSnap.docs.forEach((d) => batch.delete(d.ref));
+
+          // 3. Delete all recurring payments for this wallet
+          const recSnap = await getDocs(
+            query(
+              collection(db, 'recurring'),
+              where('uid', '==', user.uid),
+              where('walletId', '==', walletId),
+            ),
+          );
+          recSnap.docs.forEach((d) => batch.delete(d.ref));
+
+          // 4. Delete the wallet itself
+          batch.delete(doc(db, 'wallets', walletId));
+
+          // 5. Update user's defaultWalletId if it was deleted
+          const wasDefault = wallets.find((w) => w.id === walletId)?.isDefault;
+          if (wasDefault) {
+            const nextDefault = wallets.find((w) => w.id !== walletId);
+            if (nextDefault) {
+              batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
+              batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
+            } else {
+              batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
             }
           }
+
+          await batch.commit();
+          try {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch (e) {}
+          Toast.show({ type: 'success', text1: 'Wallet deleted ✓' });
+          
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/');
+          }
+        } catch (err: any) {
+          Toast.show({ type: 'error', text1: 'Error', text2: err.message ?? 'Could not delete wallet.' });
+        } finally {
+          setSaving(false);
         }
-      ]
+      }
     );
   };
 

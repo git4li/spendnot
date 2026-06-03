@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
-  Keyboard, TouchableWithoutFeedback, Modal,
+  Keyboard, TouchableWithoutFeedback, Modal, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -51,6 +51,9 @@ export default function EditExpenseModal() {
   const { bottom } = useSafeAreaInsets();
   const { expenses } = useExpenses(100); // Load last 100 transactions for frequency sorting
   const amountRef = React.useRef<TextInput>(null);
+
+  const KeyboardDismissWrapper = Platform.OS === 'web' ? React.Fragment : TouchableWithoutFeedback;
+  const dismissProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -288,7 +291,8 @@ export default function EditExpenseModal() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {/* @ts-ignore */}
+      <KeyboardDismissWrapper {...dismissProps}>
         <View style={styles.sheet}>
           <View style={styles.dragHandle} />
 
@@ -493,7 +497,7 @@ export default function EditExpenseModal() {
             <Text style={styles.deleteBtnText}>Delete Transaction</Text>
           </TouchableOpacity>
         </View>
-      </TouchableWithoutFeedback>
+      </KeyboardDismissWrapper>
 
       {/* Add Custom Category Modal */}
       <Modal visible={showAddCat} transparent animationType="fade">

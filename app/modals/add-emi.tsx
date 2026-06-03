@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, ActivityIndicator,
-  Keyboard, TouchableWithoutFeedback,
+  Keyboard, TouchableWithoutFeedback, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -26,6 +26,9 @@ export default function AddEmiModal() {
   const { wallets } = useWallets();
   const { bottom } = useSafeAreaInsets();
   const { expenses } = useExpenses(100);
+
+  const KeyboardDismissWrapper = Platform.OS === 'web' ? React.Fragment : TouchableWithoutFeedback;
+  const dismissProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
 
   const [name, setName] = useState('');
   const [monthlyAmount, setMonthlyAmount] = useState('');
@@ -143,7 +146,8 @@ export default function AddEmiModal() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      {/* @ts-ignore */}
+      <KeyboardDismissWrapper {...dismissProps}>
         <View style={styles.sheet}>
           <View style={styles.dragHandle} />
           
@@ -262,7 +266,7 @@ export default function AddEmiModal() {
             {saving ? <ActivityIndicator color={Colors.polarWhite} /> : <Text style={styles.saveBtnText}>Create EMI Plan</Text>}
           </TouchableOpacity>
         </View>
-      </TouchableWithoutFeedback>
+      </KeyboardDismissWrapper>
     </SafeAreaView>
   );
 }
