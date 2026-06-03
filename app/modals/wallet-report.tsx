@@ -18,7 +18,7 @@ import Toast from 'react-native-toast-message';
 import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  WalletColors, getCategoryDef,
+  getCategoryDef, getWalletColors,
 } from '../../constants/theme';
 import { Expense } from '../../types/models';
 
@@ -73,7 +73,7 @@ export default function WalletReportModal() {
   const [processingPayment, setProcessingPayment] = useState(false);
 
   const wallet = wallets.find((w) => w.id === walletId);
-  const colors = wallet ? (WalletColors[wallet.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack }) : { bg: Colors.ghostGray, text: Colors.carbonBlack };
+  const colors = wallet ? getWalletColors(wallet.type, wallet.bankName) : { bg: Colors.ghostGray, text: Colors.carbonBlack };
   const isLight = wallet?.type !== 'credit';
 
   useEffect(() => {
@@ -396,7 +396,7 @@ export default function WalletReportModal() {
                     {wallets
                       .filter((w) => w.id !== walletId)
                       .map((w) => {
-                        const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                        const wColors = getWalletColors(w.type, w.bankName);
                         const isSel = sourceWalletId === w.id;
                         return (
                           <TouchableOpacity

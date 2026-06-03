@@ -20,7 +20,7 @@ import { useExpenses, useMonthlyExpenses } from '../../hooks/useExpenses';
 import { useEmis } from '../../hooks/useEmis';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  WalletColors, getCategoryDef,
+  getCategoryDef, getWalletColors,
 } from '../../constants/theme';
 import { Wallet, Expense } from '../../types/models';
 import { doc, updateDoc, increment, collection, addDoc, Timestamp } from 'firebase/firestore';
@@ -30,7 +30,7 @@ import * as Haptics from 'expo-haptics';
 
 // ── Wallet Mini Card ─────────────────────────
 function WalletMiniCard({ wallet, onPress }: { wallet: Wallet; onPress: () => void }) {
-  const colors = WalletColors[wallet.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+  const colors = getWalletColors(wallet.type, wallet.bankName);
   return (
     <TouchableOpacity
       style={[styles.walletMiniCard, { backgroundColor: colors.bg }]}

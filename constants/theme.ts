@@ -123,16 +123,31 @@ export const BankColors: Record<string, { bg: string; text: string }> = {
   kotak: { bg: '#FFD3D6', text: '#1E3A8A' },     // Pastel Red/Blue
 };
 
-export const getWalletColors = (type: WalletType, bankName?: string | null): { bg: string; text: string } => {
-  if (type === 'bank' && bankName) {
-    const key = bankName.toLowerCase().trim();
+export const getWalletColors = (type: string, bankName?: string | null): { bg: string; text: string } => {
+  let resolvedType: WalletType = 'bank';
+  if (type === 'cash' || type === 'credit' || type === 'bank') {
+    resolvedType = type;
+  }
+
+  if (resolvedType === 'bank') {
+    const nameToUse = bankName || (type === 'upi-phonepe' ? 'PhonePe' : type === 'upi-gpay' ? 'GPay' : '');
+    const key = nameToUse.toLowerCase().trim();
     if (key.includes('hdfc')) return BankColors.hdfc;
     if (key.includes('sbi') || key.includes('state bank')) return BankColors.sbi;
     if (key.includes('icici')) return BankColors.icici;
     if (key.includes('axis')) return BankColors.axis;
     if (key.includes('kotak')) return BankColors.kotak;
+
+    // Fallbacks for legacy UPI app colors to preserve layout aesthetics
+    if (type === 'upi-phonepe') {
+      return { bg: '#F3C0DC', text: '#1A1A1A' }; // Original pastel purple/pink
+    }
+    if (type === 'upi-gpay') {
+      return { bg: '#B7D3F2', text: '#1A1A1A' }; // Original pastel blue
+    }
   }
-  return WalletColors[type];
+
+  return WalletColors[resolvedType] ?? WalletColors.bank;
 };
 
 // Category definitions

@@ -41,7 +41,11 @@ export default function AddWalletModal() {
     if (isEdit && wallets.length > 0) {
       const existing = wallets.find((w) => w.id === walletId);
       if (existing) {
-        setWalletType(existing.type);
+        let resolvedType = existing.type;
+        if (resolvedType !== 'cash' && resolvedType !== 'credit' && resolvedType !== 'bank') {
+          resolvedType = 'bank';
+        }
+        setWalletType(resolvedType as WalletType);
         setBankName(existing.bankName || '');
         setWalletName(existing.name);
         setInitialBalance(String(existing.balance));

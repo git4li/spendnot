@@ -1,122 +1,65 @@
-[debug] [2026-06-02T13:11:24.685Z] ----------------------------------------------------------------------
-[debug] [2026-06-02T13:11:24.687Z] Command:       /Users/muhammadali/.nvm/versions/node/v22.22.3/bin/node /Users/muhammadali/Desktop/4li.design/Antiprojects/.npm-cache/_npx/7750544ccf494d8b/node_modules/.bin/firebase deploy --only hosting
-[debug] [2026-06-02T13:11:24.687Z] CLI Version:   15.19.0
-[debug] [2026-06-02T13:11:24.687Z] Platform:      darwin
-[debug] [2026-06-02T13:11:24.687Z] Node Version:  v22.22.3
-[debug] [2026-06-02T13:11:24.688Z] Time:          Tue Jun 02 2026 18:41:24 GMT+0530 (India Standard Time)
-[debug] [2026-06-02T13:11:24.688Z] ----------------------------------------------------------------------
+[debug] [2026-06-03T03:38:31.455Z] ----------------------------------------------------------------------
+[debug] [2026-06-03T03:38:31.457Z] Command:       /Users/muhammadali/.nvm/versions/node/v22.22.3/bin/node /Users/muhammadali/Desktop/4li.design/Antiprojects/.npm-cache/_npx/7750544ccf494d8b/node_modules/.bin/firebase deploy --only hosting
+[debug] [2026-06-03T03:38:31.458Z] CLI Version:   15.19.0
+[debug] [2026-06-03T03:38:31.458Z] Platform:      darwin
+[debug] [2026-06-03T03:38:31.458Z] Node Version:  v22.22.3
+[debug] [2026-06-03T03:38:31.458Z] Time:          Wed Jun 03 2026 09:08:31 GMT+0530 (India Standard Time)
+[debug] [2026-06-03T03:38:31.458Z] ----------------------------------------------------------------------
 [debug] 
-[debug] [2026-06-02T13:11:25.876Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
-[debug] [2026-06-02T13:11:25.876Z] > authorizing via signed-in user (mailsfor4li@gmail.com)
-[debug] [2026-06-02T13:11:25.877Z] [iam] checking project spendnot-app for permissions ["firebase.projects.get","firebasehosting.sites.update"]
-[debug] [2026-06-02T13:11:25.877Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:25.877Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:25.878Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions [none]
-[debug] [2026-06-02T13:11:25.878Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions  x-goog-user-project=spendnot-app
-[debug] [2026-06-02T13:11:25.878Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
-[debug] [2026-06-02T13:11:27.634Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions 200
-[debug] [2026-06-02T13:11:27.635Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
-[debug] [2026-06-02T13:11:27.635Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:27.635Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:27.635Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/spendnot-app [none]
-[debug] [2026-06-02T13:11:28.157Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/spendnot-app 200
-[debug] [2026-06-02T13:11:28.157Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/spendnot-app {"projectId":"spendnot-app","projectNumber":"1091772148884","displayName":"SPENDNOT","name":"projects/spendnot-app","resources":{"hostingSite":"spendnot-app"},"state":"ACTIVE","etag":"1_c8923410-3264-4ea5-aedd-fa31ae5010f0"}
+[debug] [2026-06-03T03:38:32.623Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-06-03T03:38:32.624Z] > authorizing via signed-in user (mailsfor4li@gmail.com)
+[debug] [2026-06-03T03:38:32.624Z] [iam] checking project spendnot-app for permissions ["firebase.projects.get","firebasehosting.sites.update"]
+[debug] [2026-06-03T03:38:32.625Z] Checked if tokens are valid: false, expires at: 1780409465807
+[debug] [2026-06-03T03:38:32.625Z] Checked if tokens are valid: false, expires at: 1780409465807
+[debug] [2026-06-03T03:38:32.625Z] > refreshing access token with scopes: []
+[debug] [2026-06-03T03:38:32.626Z] >>> [apiv2][query] POST https://www.googleapis.com/oauth2/v3/token [none]
+[debug] [2026-06-03T03:38:32.626Z] >>> [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-06-03T03:38:32.878Z] <<< [apiv2][status] POST https://www.googleapis.com/oauth2/v3/token 200
+[debug] [2026-06-03T03:38:32.879Z] <<< [apiv2][body] POST https://www.googleapis.com/oauth2/v3/token [omitted]
+[debug] [2026-06-03T03:38:32.895Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions [none]
+[debug] [2026-06-03T03:38:32.895Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions  x-goog-user-project=spendnot-app
+[debug] [2026-06-03T03:38:32.895Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-03T03:38:34.435Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions 200
+[debug] [2026-06-03T03:38:34.435Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/spendnot-app:testIamPermissions {"permissions":["firebase.projects.get","firebasehosting.sites.update"]}
+[debug] [2026-06-03T03:38:34.437Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:34.437Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:34.437Z] >>> [apiv2][query] GET https://firebase.googleapis.com/v1beta1/projects/spendnot-app [none]
+[debug] [2026-06-03T03:38:35.780Z] <<< [apiv2][status] GET https://firebase.googleapis.com/v1beta1/projects/spendnot-app 200
+[debug] [2026-06-03T03:38:35.781Z] <<< [apiv2][body] GET https://firebase.googleapis.com/v1beta1/projects/spendnot-app {"projectId":"spendnot-app","projectNumber":"1091772148884","displayName":"SPENDNOT","name":"projects/spendnot-app","resources":{"hostingSite":"spendnot-app"},"state":"ACTIVE","etag":"1_c8923410-3264-4ea5-aedd-fa31ae5010f0"}
 [info] 
 [info] === Deploying to 'spendnot-app'...
 [info] 
 [info] i  deploying hosting 
-[debug] [2026-06-02T13:11:28.161Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:28.161Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:28.162Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/spendnot-app/sites/spendnot-app [none]
-[debug] [2026-06-02T13:11:29.514Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/spendnot-app/sites/spendnot-app 200
-[debug] [2026-06-02T13:11:29.514Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/spendnot-app/sites/spendnot-app {"name":"projects/spendnot-app/sites/spendnot-app","defaultUrl":"https://spendnot-app.web.app","type":"DEFAULT_SITE"}
-[debug] [2026-06-02T13:11:29.519Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:29.519Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:29.519Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions [none]
-[debug] [2026-06-02T13:11:29.519Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
-[debug] [2026-06-02T13:11:30.638Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions 200
-[debug] [2026-06-02T13:11:30.638Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions {"name":"projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-06-03T03:38:35.785Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:35.785Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:35.785Z] >>> [apiv2][query] GET https://firebasehosting.googleapis.com/v1beta1/projects/spendnot-app/sites/spendnot-app [none]
+[debug] [2026-06-03T03:38:37.035Z] <<< [apiv2][status] GET https://firebasehosting.googleapis.com/v1beta1/projects/spendnot-app/sites/spendnot-app 200
+[debug] [2026-06-03T03:38:37.036Z] <<< [apiv2][body] GET https://firebasehosting.googleapis.com/v1beta1/projects/spendnot-app/sites/spendnot-app {"name":"projects/spendnot-app/sites/spendnot-app","defaultUrl":"https://spendnot-app.web.app","type":"DEFAULT_SITE"}
+[debug] [2026-06-03T03:38:37.040Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:37.040Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:37.040Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions [none]
+[debug] [2026-06-03T03:38:37.040Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions {"status":"CREATED","labels":{"deployment-tool":"cli-firebase"}}
+[debug] [2026-06-03T03:38:38.090Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions 200
+[debug] [2026-06-03T03:38:38.091Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions {"name":"projects/1091772148884/sites/spendnot-app/versions/c4698b7d53f17efc","status":"CREATED","config":{},"labels":{"deployment-tool":"cli-firebase"}}
 [info] i  hosting[spendnot-app]: beginning deploy... 
 [info] i  hosting[spendnot-app]: found 24 files in dist 
-[debug] [2026-06-02T13:11:30.660Z] [hosting] uploading with 200 concurrency
-[debug] [2026-06-02T13:11:30.762Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:30.762Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:30.763Z] [hosting] hash cache [ZGlzdA] stored for 24 files
-[debug] [2026-06-02T13:11:30.763Z] [hosting][hash queue][FINAL] {"max":98,"min":7,"avg":11.541666666666666,"active":0,"complete":24,"success":24,"errored":0,"retried":0,"total":24,"elapsed":102}
-[debug] [2026-06-02T13:11:30.764Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6:populateFiles [none]
-[debug] [2026-06-02T13:11:30.764Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6:populateFiles {"files":{"/reports.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/wallets.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/profile.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/onboarding.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/register.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/budgets.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/index.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/login.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/favicon.ico":"419afac1a7aaf3de8ded0ee5b4afb0955e24fb9d40c6d5d960b246e22f76b3d3","/modals/wallet-report.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/+not-found.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/_sitemap.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/modals/edit-expense.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/modals/add-expense.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(tabs)/wallets.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(tabs)/profile.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(tabs)/reports.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/modals/add-wallet.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/modals/add-emi.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(tabs)/index.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(tabs)/budgets.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(auth)/register.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/(auth)/login.html":"08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","/_expo/static/js/web/index-5311e52d7e919e6129aded8fab9b2c2c.js":"af84accbb9e65a4a5fb8c52bdf16e2ffa4eb1fbfce9be3fbc359573b9ebea540"}}
-[debug] [2026-06-02T13:11:31.498Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6:populateFiles 200
-[debug] [2026-06-02T13:11:31.498Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6:populateFiles {"uploadRequiredHashes":["08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756","af84accbb9e65a4a5fb8c52bdf16e2ffa4eb1fbfce9be3fbc359573b9ebea540"],"uploadUrl":"https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files"}
-[debug] [2026-06-02T13:11:31.499Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:31.499Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:31.499Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:31.499Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:31.499Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756 [none]
-[debug] [2026-06-02T13:11:31.499Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756 [stream]
-[debug] [2026-06-02T13:11:31.501Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/af84accbb9e65a4a5fb8c52bdf16e2ffa4eb1fbfce9be3fbc359573b9ebea540 [none]
-[debug] [2026-06-02T13:11:31.502Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/af84accbb9e65a4a5fb8c52bdf16e2ffa4eb1fbfce9be3fbc359573b9ebea540 [stream]
-[debug] [2026-06-02T13:11:31.504Z] [hosting][populate queue][FINAL] {"max":737,"min":737,"avg":737,"active":0,"complete":1,"success":1,"errored":0,"retried":0,"total":1,"elapsed":742}
-[debug] [2026-06-02T13:11:31.504Z] [hosting] uploads queued: 2
+[debug] [2026-06-03T03:38:38.110Z] [hosting] uploading with 200 concurrency
+[debug] [2026-06-03T03:38:38.215Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:38.215Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:38.216Z] [hosting] hash cache [ZGlzdA] stored for 24 files
+[debug] [2026-06-03T03:38:38.216Z] [hosting][hash queue][FINAL] {"max":101,"min":8,"avg":12.375,"active":0,"complete":24,"success":24,"errored":0,"retried":0,"total":24,"elapsed":105}
+[debug] [2026-06-03T03:38:38.216Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/c4698b7d53f17efc:populateFiles [none]
+[debug] [2026-06-03T03:38:38.216Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/c4698b7d53f17efc:populateFiles {"files":{"/reports.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/wallets.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/index.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/register.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/login.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/profile.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/budgets.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/favicon.ico":"419afac1a7aaf3de8ded0ee5b4afb0955e24fb9d40c6d5d960b246e22f76b3d3","/_sitemap.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/onboarding.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/+not-found.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/modals/add-expense.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/modals/wallet-report.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/modals/add-wallet.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/modals/edit-expense.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(tabs)/index.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(tabs)/profile.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(tabs)/wallets.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/modals/add-emi.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(tabs)/reports.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(tabs)/budgets.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(auth)/register.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/(auth)/login.html":"3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","/_expo/static/js/web/index-e29053b3975409646a74f00ad8296c8a.js":"5c0b12920f365631636d95d38bd7ec803372b8bd522ff03eeb0118aefd51282e"}}
+[debug] [2026-06-03T03:38:39.090Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/c4698b7d53f17efc:populateFiles 200
+[debug] [2026-06-03T03:38:39.091Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/1091772148884/sites/spendnot-app/versions/c4698b7d53f17efc:populateFiles {"uploadRequiredHashes":["3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e","5c0b12920f365631636d95d38bd7ec803372b8bd522ff03eeb0118aefd51282e"],"uploadUrl":"https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/c4698b7d53f17efc/files"}
+[debug] [2026-06-03T03:38:39.092Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:39.092Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:39.092Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:39.092Z] Checked if tokens are valid: true, expires at: 1780461511879
+[debug] [2026-06-03T03:38:39.092Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/c4698b7d53f17efc/files/3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e [none]
+[debug] [2026-06-03T03:38:39.092Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/c4698b7d53f17efc/files/3897f9bd2b9093406aab4fdfa619240c6535da849bb407b8eb2826f91066ac6e [stream]
+[debug] [2026-06-03T03:38:39.094Z] >>> [apiv2][query] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/c4698b7d53f17efc/files/5c0b12920f365631636d95d38bd7ec803372b8bd522ff03eeb0118aefd51282e [none]
+[debug] [2026-06-03T03:38:39.094Z] >>> [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/c4698b7d53f17efc/files/5c0b12920f365631636d95d38bd7ec803372b8bd522ff03eeb0118aefd51282e [stream]
+[debug] [2026-06-03T03:38:39.095Z] [hosting][populate queue][FINAL] {"max":877,"min":877,"avg":877,"active":0,"complete":1,"success":1,"errored":0,"retried":0,"total":1,"elapsed":880}
+[debug] [2026-06-03T03:38:39.096Z] [hosting] uploads queued: 2
 [info] i  hosting: uploading new files [0/2] (0%) 
-[debug] [2026-06-02T13:11:33.186Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756 200
-[debug] [2026-06-02T13:11:33.187Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/08b4b0a09110e0361819c5e67e048a1a6f065a1c6e3f606d6631892db03a3756 [stream]
-[debug] [2026-06-02T13:11:33.786Z] <<< [apiv2][status] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/af84accbb9e65a4a5fb8c52bdf16e2ffa4eb1fbfce9be3fbc359573b9ebea540 200
-[debug] [2026-06-02T13:11:33.787Z] <<< [apiv2][body] POST https://upload-firebasehosting.googleapis.com/upload/sites/spendnot-app/versions/56a96b4222a44bd6/files/af84accbb9e65a4a5fb8c52bdf16e2ffa4eb1fbfce9be3fbc359573b9ebea540 [stream]
-[debug] [2026-06-02T13:11:33.787Z] [hosting][upload queue][FINAL] {"max":2288,"min":1689,"avg":1988.5,"active":0,"complete":2,"success":2,"errored":0,"retried":0,"total":2,"elapsed":2289}
-[info] i  hosting: upload complete 
-[info] ✔  hosting[spendnot-app]: file upload complete 
-[debug] [2026-06-02T13:11:33.788Z] [hosting] deploy completed after 3146ms
-[debug] [2026-06-02T13:11:33.788Z] [
-  {
-    "config": {
-      "public": "dist",
-      "ignore": [
-        "firebase.json",
-        "**/.*",
-        "**/node_modules/**"
-      ],
-      "rewrites": [
-        {
-          "source": "**",
-          "destination": "/index.html"
-        }
-      ],
-      "headers": [
-        {
-          "source": "**/*.@(js|css|woff2)",
-          "headers": [
-            {
-              "key": "Cache-Control",
-              "value": "max-age=31536000, immutable"
-            }
-          ]
-        }
-      ],
-      "site": "spendnot-app"
-    },
-    "version": "projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6"
-  }
-]
-[info] i  hosting[spendnot-app]: finalizing version... 
-[debug] [2026-06-02T13:11:33.790Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:33.790Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:33.790Z] >>> [apiv2][query] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions/56a96b4222a44bd6 updateMask=status%2Cconfig
-[debug] [2026-06-02T13:11:33.790Z] >>> [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions/56a96b4222a44bd6 {"status":"FINALIZED","config":{"rewrites":[{"glob":"**","path":"/index.html"}],"headers":[{"glob":"**/*.@(js|css|woff2)","headers":{"Cache-Control":"max-age=31536000, immutable"}}]}}
-[debug] [2026-06-02T13:11:34.595Z] <<< [apiv2][status] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions/56a96b4222a44bd6 200
-[debug] [2026-06-02T13:11:34.595Z] <<< [apiv2][body] PATCH https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/versions/56a96b4222a44bd6 {"name":"projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6","status":"FINALIZED","config":{"headers":[{"headers":{"Cache-Control":"max-age=31536000, immutable"},"glob":"**/*.@(js|css|woff2)"}],"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-06-02T13:11:29.898361Z","createUser":{"email":"mailsfor4li@gmail.com"},"finalizeTime":"2026-06-02T13:11:34.386272Z","finalizeUser":{"email":"mailsfor4li@gmail.com"}}
-[debug] [2026-06-02T13:11:34.595Z] [hosting] finalized version for spendnot-app:[object Object]
-[info] ✔  hosting[spendnot-app]: version finalized 
-[info] i  hosting[spendnot-app]: releasing new version... 
-[debug] [2026-06-02T13:11:34.596Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:34.596Z] Checked if tokens are valid: true, expires at: 1780409465807
-[debug] [2026-06-02T13:11:34.596Z] >>> [apiv2][query] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/channels/live/releases versionName=projects%2F1091772148884%2Fsites%2Fspendnot-app%2Fversions%2F56a96b4222a44bd6
-[debug] [2026-06-02T13:11:34.596Z] >>> [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/channels/live/releases {}
-[debug] [2026-06-02T13:11:35.868Z] <<< [apiv2][status] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/channels/live/releases 200
-[debug] [2026-06-02T13:11:35.868Z] <<< [apiv2][body] POST https://firebasehosting.googleapis.com/v1beta1/projects/-/sites/spendnot-app/channels/live/releases {"name":"projects/1091772148884/sites/spendnot-app/channels/live/releases/1780405895015000","version":{"name":"projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6","status":"FINALIZED","config":{"headers":[{"headers":{"Cache-Control":"max-age=31536000, immutable"},"glob":"**/*.@(js|css|woff2)"}],"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-06-02T13:11:29.898361Z","createUser":{"email":"mailsfor4li@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocIicoraaQsq6OYuiJonlK4Ihk0aUxftDGpSyMMHntcSEi69nw"},"finalizeTime":"2026-06-02T13:11:34.386272Z","finalizeUser":{"email":"mailsfor4li@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocIicoraaQsq6OYuiJonlK4Ihk0aUxftDGpSyMMHntcSEi69nw"}},"type":"DEPLOY","releaseTime":"2026-06-02T13:11:35.015Z","releaseUser":{"email":"mailsfor4li@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocIicoraaQsq6OYuiJonlK4Ihk0aUxftDGpSyMMHntcSEi69nw"}}
-[debug] [2026-06-02T13:11:35.869Z] [hosting] release: {"name":"projects/1091772148884/sites/spendnot-app/channels/live/releases/1780405895015000","version":{"name":"projects/1091772148884/sites/spendnot-app/versions/56a96b4222a44bd6","status":"FINALIZED","config":{"headers":[{"headers":{"Cache-Control":"max-age=31536000, immutable"},"glob":"**/*.@(js|css|woff2)"}],"rewrites":[{"glob":"**","path":"/index.html"}]},"labels":{"deployment-tool":"cli-firebase"},"createTime":"2026-06-02T13:11:29.898361Z","createUser":{"email":"mailsfor4li@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocIicoraaQsq6OYuiJonlK4Ihk0aUxftDGpSyMMHntcSEi69nw"},"finalizeTime":"2026-06-02T13:11:34.386272Z","finalizeUser":{"email":"mailsfor4li@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocIicoraaQsq6OYuiJonlK4Ihk0aUxftDGpSyMMHntcSEi69nw"}},"type":"DEPLOY","releaseTime":"2026-06-02T13:11:35.015Z","releaseUser":{"email":"mailsfor4li@gmail.com","imageUrl":"https://lh3.googleusercontent.com/a/ACg8ocIicoraaQsq6OYuiJonlK4Ihk0aUxftDGpSyMMHntcSEi69nw"}}
-[info] ✔  hosting[spendnot-app]: release complete 
-[info] 
-[info] ✔  Deploy complete! 
-[info] 
-[info] Project Console: https://console.firebase.google.com/project/spendnot-app/overview
-[info] Hosting URL: https://spendnot-app.web.app
