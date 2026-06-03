@@ -2,7 +2,7 @@
 //  SPENDNOT — Wallets Screen (Screen 3)
 //  app/(tabs)/wallets.tsx
 // ─────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, Alert, Modal,
@@ -176,10 +176,28 @@ export default function WalletsScreen() {
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const walletSpend: Record<string, number> = {};
-  monthly.forEach((e) => {
-    walletSpend[e.walletId] = (walletSpend[e.walletId] ?? 0) + e.amount;
-  });
+  // Sort state
+  const [sortBy, setSortBy] = useState<'default' | 'balance' | 'expense'>('default');
+
+  const { walletSpend, sortedWallets } = useMemo(() => {
+    const spend: Record<string, number> = {};
+    monthly.forEach((e) => {
+      spend[e.walletId] = (spend[e.walletId] ?? 0) + e.amount;
+    });
+
+    const list = [...wallets];
+    if (sortBy === 'balance') {
+      list.sort((a, b) => b.balance - a.balance);
+    } else if (sortBy === 'expense') {
+      list.sort((a, b) => {
+        const spentA = spend[a.id] ?? 0;
+        const spentB = spend[b.id] ?? 0;
+        return spentB - spentA;
+      });
+    }
+
+    return { walletSpend: spend, sortedWallets: list };
+  }, [wallets, monthly, sortBy]);
 
   const handleToggleSelect = (walletId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -445,6 +463,40 @@ export default function WalletsScreen() {
         </View>
       </View>
 
+      {!loading && !isSelectionMode && wallets.length > 0 && (
+        <View style={styles.filterRow}>
+          <Text style={styles.filterLabel}>Sort by:</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScroll}
+          >
+            {[
+              { key: 'default', label: 'Default' },
+              { key: 'balance', label: 'Higher Balance' },
+              { key: 'expense', label: 'Higher Expense' },
+            ].map((opt) => {
+              const active = sortBy === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.filterPill, active && styles.filterPillActive]}
+                  onPress={() => {
+                    setSortBy(opt.key as any);
+                    try { Haptics.selectionAsync(); } catch (e) {}
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
       {loading ? (
         <ScrollView contentContainerStyle={styles.listContent}>
           <BigWalletSkeleton />
@@ -464,7 +516,7 @@ export default function WalletsScreen() {
           <Text style={styles.hint}>
             {isSelectionMode ? 'Tap cards to select' : 'Hold a wallet for options'}
           </Text>
-          {wallets.map((w) => (
+          {sortedWallets.map((w) => (
             <BigWalletCard
               key={w.id}
               wallet={w}
@@ -639,6 +691,42 @@ const styles = StyleSheet.create({
   emptyBtnText: {
     ...Typography.bodyBold,
     fontSize: FontSize.base,
+    color: Colors.polarWhite,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  filterLabel: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.xs,
+    color: Colors.mutedStone,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  filterScroll: {
+    gap: Spacing.xs,
+  },
+  filterPill: {
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm - 2,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  filterPillActive: {
+    backgroundColor: Colors.carbonBlack,
+  },
+  filterPillText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.xs,
+    color: Colors.mutedStone,
+  },
+  filterPillTextActive: {
     color: Colors.polarWhite,
   },
 });
