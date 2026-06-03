@@ -30,10 +30,16 @@ import Toast from 'react-native-toast-message';
 function BigWalletCard({
   wallet,
   spentThisMonth,
+  isSelectionMode,
+  isSelected,
+  onPress,
   onLongPress,
 }: {
   wallet: Wallet;
   spentThisMonth: number;
+  isSelectionMode: boolean;
+  isSelected: boolean;
+  onPress: () => void;
   onLongPress: () => void;
 }) {
   const colors = getWalletColors(wallet.type, wallet.bankName);
@@ -45,12 +51,22 @@ function BigWalletCard({
   return (
     <TouchableOpacity
       activeOpacity={0.88}
+      onPress={onPress}
       onLongPress={onLongPress}
-      delayLongPress={400}
+      delayLongPress={300}
     >
       <View style={[styles.bigCard, { backgroundColor: colors.bg }]}>
         {/* Top row */}
         <View style={styles.bigCardTop}>
+          {isSelectionMode && (
+            <View style={[
+              styles.checkbox,
+              { borderColor: colors.text },
+              isSelected && { backgroundColor: colors.text }
+            ]}>
+              {isSelected && <Text style={[styles.checkMark, { color: colors.bg }]}>✓</Text>}
+            </View>
+          )}
           <Text style={{ fontSize: 18 }}>{icon}</Text>
           <Text style={[styles.bigCardName, { color: colors.text }]}>{wallet.name}</Text>
           {wallet.isDefault && (
@@ -154,14 +170,43 @@ export default function WalletsScreen() {
   const { monthly } = useMonthlyExpenses();
   const [selectedWallet, setSelectedWallet] = useState<Wallet | null>(null);
 
+  // Multi-select state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
   const walletSpend: Record<string, number> = {};
   monthly.forEach((e) => {
     walletSpend[e.walletId] = (walletSpend[e.walletId] ?? 0) + e.amount;
   });
 
+  const handleToggleSelect = (walletId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(walletId)) {
+        next.delete(walletId);
+      } else {
+        next.add(walletId);
+      }
+      return next;
+    });
+  };
+
   const handleLongPress = (wallet: Wallet) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedWallet(wallet);
+    if (isSelectionMode) {
+      handleToggleSelect(wallet.id);
+    } else {
+      setSelectedWallet(wallet);
+    }
+  };
+
+  const handleCardPress = (wallet: Wallet) => {
+    if (isSelectionMode) {
+      handleToggleSelect(wallet.id);
+    } else {
+      router.push({ pathname: '/modals/wallet-report', params: { walletId: wallet.id } });
+    }
   };
 
   const handleDelete = () => {
@@ -171,7 +216,7 @@ export default function WalletsScreen() {
 
     Alert.alert(
       'Delete Wallet',
-      `Delete "${w.name}"? All expenses linked to this wallet will also be deleted.`,
+      `Delete "${w.name}"? All expenses, EMIs, and recurring payments linked to this wallet will also be permanently deleted.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -180,7 +225,8 @@ export default function WalletsScreen() {
           onPress: async () => {
             try {
               const batch = writeBatch(db);
-              // Delete all expenses for this wallet
+              
+              // 1. Delete all expenses for this wallet
               const expSnap = await getDocs(
                 query(
                   collection(db, 'expenses'),
@@ -189,8 +235,41 @@ export default function WalletsScreen() {
                 ),
               );
               expSnap.docs.forEach((d) => batch.delete(d.ref));
-              // Delete the wallet itself
+
+              // 2. Delete all EMIs for this wallet
+              const emiSnap = await getDocs(
+                query(
+                  collection(db, 'emis'),
+                  where('uid', '==', user.uid),
+                  where('walletId', '==', w.id),
+                ),
+              );
+              emiSnap.docs.forEach((d) => batch.delete(d.ref));
+
+              // 3. Delete all recurring payments for this wallet
+              const recSnap = await getDocs(
+                query(
+                  collection(db, 'recurring'),
+                  where('uid', '==', user.uid),
+                  where('walletId', '==', w.id),
+                ),
+              );
+              recSnap.docs.forEach((d) => batch.delete(d.ref));
+
+              // 4. Delete the wallet itself
               batch.delete(doc(db, 'wallets', w.id));
+
+              // 5. Update user's defaultWalletId if it was deleted
+              if (w.isDefault) {
+                const nextDefault = wallets.find((wl) => wl.id !== w.id);
+                if (nextDefault) {
+                  batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
+                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
+                } else {
+                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
+                }
+              }
+
               await batch.commit();
               try {
                 await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -198,6 +277,101 @@ export default function WalletsScreen() {
               Toast.show({ type: 'success', text1: `"${w.name}" deleted` });
             } catch (err: any) {
               Toast.show({ type: 'error', text1: 'Delete failed', text2: err.message });
+            }
+          },
+        },
+      ],
+    );
+  };
+
+  const handleDeleteMultiple = () => {
+    if (selectedIds.size === 0 || !user) return;
+    const idsToDelete = Array.from(selectedIds);
+
+    Alert.alert(
+      'Delete Wallets',
+      `Delete the ${idsToDelete.length} selected wallets? All associated expenses, EMIs, and recurring payments will be permanently deleted.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const batch = writeBatch(db);
+
+              // 1. Fetch and delete expenses in chunks of 10
+              const expRefs: any[] = [];
+              for (let i = 0; i < idsToDelete.length; i += 10) {
+                const chunk = idsToDelete.slice(i, i + 10);
+                const expSnap = await getDocs(
+                  query(
+                    collection(db, 'expenses'),
+                    where('uid', '==', user.uid),
+                    where('walletId', 'in', chunk),
+                  ),
+                );
+                expRefs.push(...expSnap.docs.map(d => d.ref));
+              }
+              expRefs.forEach((ref) => batch.delete(ref));
+
+              // 2. Fetch and delete EMIs in chunks of 10
+              const emiRefs: any[] = [];
+              for (let i = 0; i < idsToDelete.length; i += 10) {
+                const chunk = idsToDelete.slice(i, i + 10);
+                const emiSnap = await getDocs(
+                  query(
+                    collection(db, 'emis'),
+                    where('uid', '==', user.uid),
+                    where('walletId', 'in', chunk),
+                  ),
+                );
+                emiRefs.push(...emiSnap.docs.map(d => d.ref));
+              }
+              emiRefs.forEach((ref) => batch.delete(ref));
+
+              // 3. Fetch and delete recurring payments in chunks of 10
+              const recRefs: any[] = [];
+              for (let i = 0; i < idsToDelete.length; i += 10) {
+                const chunk = idsToDelete.slice(i, i + 10);
+                const recSnap = await getDocs(
+                  query(
+                    collection(db, 'recurring'),
+                    where('uid', '==', user.uid),
+                    where('walletId', 'in', chunk),
+                  ),
+                );
+                recRefs.push(...recSnap.docs.map(d => d.ref));
+              }
+              recRefs.forEach((ref) => batch.delete(ref));
+
+              // 4. Delete the wallets themselves
+              idsToDelete.forEach((id) => {
+                batch.delete(doc(db, 'wallets', id));
+              });
+
+              // 5. Update user's defaultWalletId if it was deleted
+              const defaultWalletToDelete = wallets.find((w) => w.isDefault && idsToDelete.includes(w.id));
+              if (defaultWalletToDelete) {
+                const nextDefault = wallets.find((wl) => !idsToDelete.includes(wl.id));
+                if (nextDefault) {
+                  batch.update(doc(db, 'wallets', nextDefault.id), { isDefault: true });
+                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: nextDefault.id });
+                } else {
+                  batch.update(doc(db, 'users', user.uid), { defaultWalletId: '' });
+                }
+              }
+
+              await batch.commit();
+              try {
+                await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              } catch (e) {}
+
+              Toast.show({ type: 'success', text1: `${idsToDelete.length} wallets deleted` });
+              setIsSelectionMode(false);
+              setSelectedIds(new Set());
+            } catch (err: any) {
+              Toast.show({ type: 'error', text1: 'Deletion failed', text2: err.message });
             }
           },
         },
@@ -229,13 +403,57 @@ export default function WalletsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Wallets</Text>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => router.push('/modals/add-wallet')}
-        >
-          <Text style={styles.addBtnText}>+ Add</Text>
-        </TouchableOpacity>
+        <Text style={styles.title}>
+          {isSelectionMode
+            ? (selectedIds.size === 0 ? 'Select' : `${selectedIds.size} Selected`)
+            : 'Wallets'
+          }
+        </Text>
+        <View style={styles.headerRight}>
+          {isSelectionMode ? (
+            <>
+              {selectedIds.size > 0 && (
+                <TouchableOpacity
+                  style={[styles.headerBtn, { marginRight: Spacing.sm }]}
+                  onPress={handleDeleteMultiple}
+                >
+                  <Text style={[styles.headerBtnText, { color: Colors.danger }]}>Delete</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.headerBtn}
+                onPress={() => {
+                  setIsSelectionMode(false);
+                  setSelectedIds(new Set());
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Text style={styles.headerBtnText}>Cancel</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              {wallets.length > 0 && (
+                <TouchableOpacity
+                  style={[styles.headerBtn, { marginRight: Spacing.sm }]}
+                  onPress={() => {
+                    setIsSelectionMode(true);
+                    setSelectedIds(new Set());
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                >
+                  <Text style={styles.headerBtnText}>Select</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.addBtn}
+                onPress={() => router.push('/modals/add-wallet')}
+              >
+                <Text style={styles.addBtnText}>+ Add</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
       {loading ? (
@@ -254,12 +472,17 @@ export default function WalletsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          <Text style={styles.hint}>Hold a wallet for options</Text>
+          <Text style={styles.hint}>
+            {isSelectionMode ? 'Tap cards to select' : 'Hold a wallet for options'}
+          </Text>
           {wallets.map((w) => (
             <BigWalletCard
               key={w.id}
               wallet={w}
               spentThisMonth={walletSpend[w.id] ?? 0}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedIds.has(w.id)}
+              onPress={() => handleCardPress(w)}
               onLongPress={() => handleLongPress(w)}
             />
           ))}
@@ -290,9 +513,25 @@ const styles = StyleSheet.create({
   },
   title: {
     ...Typography.heading,
-    fontSize: FontSize['5xl'],
+    fontSize: FontSize['4xl'],
     color: Colors.carbonBlack,
     letterSpacing: -1.5,
+    flex: 1,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerBtn: {
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+  },
+  headerBtnText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: Colors.carbonBlack,
   },
   addBtn: {
     backgroundColor: Colors.carbonBlack,
@@ -329,6 +568,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkMark: {
+    fontSize: 11,
+    fontWeight: 'bold',
+    lineHeight: 12,
   },
   bigCardName: {
     ...Typography.bodyBold,
