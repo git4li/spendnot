@@ -52,8 +52,9 @@ function WalletMiniCard({ wallet, onPress }: { wallet: Wallet; onPress: () => vo
   );
 }
 
+
 // ── Expense Row ──────────────────────────────
-function ExpenseRow({ expense, walletName }: { expense: Expense; walletName: string }) {
+function ExpenseRow({ expense, walletMap }: { expense: Expense; walletMap: Record<string, string> }) {
   const cat = getCategoryDef(expense.category);
   const date = expense.date.toDate();
   const now = new Date();
@@ -66,6 +67,20 @@ function ExpenseRow({ expense, walletName }: { expense: Expense; walletName: str
     ? 'Yesterday'
     : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 
+  const sourceWalletName = walletMap[expense.walletId] ?? 'Wallet';
+  const displayWalletName = expense.type === 'transfer'
+    ? `${sourceWalletName} ➔ ${walletMap[expense.toWalletId ?? ''] ?? 'Wallet'}`
+    : sourceWalletName;
+
+  const sign = expense.type === 'income' ? '+' : expense.type === 'transfer' ? '⇄ ' : '−';
+  const amountColor = expense.type === 'income'
+    ? Colors.incomeText
+    : expense.type === 'savings'
+    ? Colors.savingsText
+    : expense.type === 'transfer'
+    ? Colors.mutedStone
+    : Colors.expenseText;
+
   return (
     <TouchableOpacity
       style={styles.expenseRow}
@@ -77,11 +92,11 @@ function ExpenseRow({ expense, walletName }: { expense: Expense; walletName: str
       </View>
       <View style={styles.expenseInfo}>
         <Text style={styles.expenseCat}>{cat.label}</Text>
-        <Text style={styles.expenseWallet}>{walletName}</Text>
+        <Text style={styles.expenseWallet}>{displayWalletName}</Text>
       </View>
       <View style={styles.expenseRight}>
-        <Text style={[styles.expenseAmount, { color: expense.type === 'income' ? Colors.incomeText : expense.type === 'savings' ? Colors.savingsText : Colors.expenseText }]}>
-          {expense.type === 'income' ? '+' : '−'}₹{expense.amount.toLocaleString('en-IN')}
+        <Text style={[styles.expenseAmount, { color: amountColor }]}>
+          {sign}₹{expense.amount.toLocaleString('en-IN')}
         </Text>
         <Text style={styles.expenseTime}>{dateStr}</Text>
       </View>
@@ -336,7 +351,7 @@ export default function DashboardScreen() {
         ) : (
           <View style={styles.expenseList}>
             {expenses.slice(0, 5).map((e) => (
-              <ExpenseRow key={e.id} expense={e} walletName={walletMap[e.walletId] ?? '—'} />
+              <ExpenseRow key={e.id} expense={e} walletMap={walletMap} />
             ))}
           </View>
         )}

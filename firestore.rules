@@ -42,10 +42,10 @@ service cloud.firestore {
       allow create: if isOwner(request.resource.data.uid)
         && request.resource.data.keys().hasAll(['uid', 'walletId', 'type', 'category', 'amount', 'date', 'createdAt'])
         && isValidAmount()
-        && request.resource.data.type in ['expense', 'income', 'savings'];
+        && request.resource.data.type in ['expense', 'income', 'savings', 'transfer'];
       allow update: if isOwner(resource.data.uid)
         && isOwner(request.resource.data.uid)
-        && request.resource.data.type in ['expense', 'income', 'savings'];
+        && request.resource.data.type in ['expense', 'income', 'savings', 'transfer'];
       allow delete: if isOwner(resource.data.uid);
     }
 

@@ -295,8 +295,21 @@ export default function ReportsScreen() {
               <Text style={styles.chartTitle}>All Entries</Text>
               {allFiltered.map((e) => {
                 const cat = getCategoryDef(e.category);
-                const walletName = walletMap[e.walletId] ?? 'Wallet';
+                const sourceWalletName = walletMap[e.walletId] ?? 'Wallet';
+                const displayWalletName = e.type === 'transfer'
+                  ? `${sourceWalletName} ➔ ${walletMap[e.toWalletId ?? ''] ?? 'Wallet'}`
+                  : sourceWalletName;
                 const dateStr = e.date.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+
+                const sign = e.type === 'income' ? '+' : e.type === 'transfer' ? '⇄ ' : '−';
+                const amountColor = e.type === 'income'
+                  ? Colors.incomeText
+                  : e.type === 'savings'
+                  ? Colors.savingsText
+                  : e.type === 'transfer'
+                  ? Colors.mutedStone
+                  : Colors.expenseText;
+
                 return (
                   <TouchableOpacity
                     key={e.id}
@@ -309,11 +322,11 @@ export default function ReportsScreen() {
                     </View>
                     <View style={styles.entryInfo}>
                       <Text style={styles.entryCat}>{cat.label}</Text>
-                      <Text style={styles.entryWallet}>{walletName}</Text>
+                      <Text style={styles.entryWallet}>{displayWalletName}</Text>
                     </View>
                     <View style={styles.entryRight}>
-                      <Text style={[styles.entryAmount, { color: e.type === 'income' ? Colors.incomeText : e.type === 'savings' ? Colors.savingsText : Colors.expenseText }]}>
-                        {e.type === 'income' ? '+' : '−'}₹{e.amount.toLocaleString('en-IN')}
+                      <Text style={[styles.entryAmount, { color: amountColor }]}>
+                        {sign}₹{e.amount.toLocaleString('en-IN')}
                       </Text>
                       <Text style={styles.entryTime}>{dateStr}</Text>
                     </View>

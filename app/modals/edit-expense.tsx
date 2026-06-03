@@ -59,16 +59,37 @@ export default function EditExpenseModal() {
   const [saving, setSaving] = useState(false);
   const [originalAmount, setOriginalAmount] = useState(0);
   const [originalWalletId, setOriginalWalletId] = useState('');
+  const [originalToWalletId, setOriginalToWalletId] = useState('');
   const [originalType, setOriginalType] = useState<TransactionType>('expense');
 
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('');
   const [walletId, setWalletId] = useState('');
+  const [toWalletId, setToWalletId] = useState('');
   const [category, setCategory] = useState('food');
   const [note, setNote] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
   const [dateMode, setDateMode] = useState<'today' | 'yesterday' | 'custom'>('today');
   const [customDateStr, setCustomDateStr] = useState(formatDateString(new Date()));
+
+  // Keep transfer wallet selections distinct
+  useEffect(() => {
+    if (type === 'transfer') {
+      if (walletId && toWalletId === walletId) {
+        const other = wallets.find((w) => w.id !== walletId);
+        if (other) {
+          setToWalletId(other.id);
+        } else {
+          setToWalletId('');
+        }
+      } else if (!toWalletId && walletId) {
+        const other = wallets.find((w) => w.id !== walletId);
+        if (other) {
+          setToWalletId(other.id);
+        }
+      }
+    }
+  }, [type, walletId, toWalletId, wallets]);
 
   // Custom category state persisted in Firestore
   const [dbCustomCats, setDbCustomCats] = useState<string[]>([]);
@@ -151,11 +172,13 @@ export default function EditExpenseModal() {
           setType(d.type);
           setAmount(String(d.amount));
           setWalletId(d.walletId);
+          setToWalletId(d.toWalletId ?? '');
           setCategory(d.category);
           setNote(d.note ?? '');
           setIsRecurring(d.isRecurring ?? false);
           setOriginalAmount(d.amount);
           setOriginalWalletId(d.walletId);
+          setOriginalToWalletId(d.toWalletId ?? '');
           setOriginalType(d.type);
           
           if (d.date) {
@@ -179,7 +202,6 @@ export default function EditExpenseModal() {
       }
     })();
   }, [id]);
-
   const handleSave = async () => {
     if (!user) {
       Toast.show({ type: 'error', text1: 'Not logged in', text2: 'Please log in first.' });
@@ -192,6 +214,14 @@ export default function EditExpenseModal() {
     }
     if (!walletId) {
       Toast.show({ type: 'error', text1: 'No wallet', text2: 'Please select a wallet.' });
+      return;
+    }
+    if (type === 'transfer' && !toWalletId) {
+      Toast.show({ type: 'error', text1: 'No destination', text2: 'Please select a destination wallet.' });
+      return;
+    }
+    if (type === 'transfer' && walletId === toWalletId) {
+      Toast.show({ type: 'error', text1: 'Invalid transfer', text2: 'Source and destination wallets must be different.' });
       return;
     }
 
@@ -212,29 +242,55 @@ export default function EditExpenseModal() {
 
       // Update the document
       await updateDoc(doc(db, 'expenses', id), {
-        type, amount: amt, walletId, category,
-        note: note.trim() || null, isRecurring,
+        type, 
+        amount: amt, 
+        walletId, 
+        toWalletId: type === 'transfer' ? toWalletId : null,
+        category: type === 'transfer' ? 'transfer' : category,
+        note: note.trim() || null, 
+        isRecurring,
         date: Timestamp.fromDate(finalDate),
         updatedAt: Timestamp.now(),
       });
 
-      // Reverse original transaction, apply new one
-      const originalDelta = originalType === 'income' ? -originalAmount : originalAmount;
-      const newDelta = type === 'income' ? amt : -amt;
+      // 1. Revert original transaction balance effect
+      if (originalType === 'transfer') {
+        await updateDoc(doc(db, 'wallets', originalWalletId), {
+          balance: increment(originalAmount),
+        });
+        if (originalToWalletId) {
+          await updateDoc(doc(db, 'wallets', originalToWalletId), {
+            balance: increment(-originalAmount),
+          });
+        }
+      } else {
+        const originalDelta = originalType === 'income' ? -originalAmount : originalAmount;
+        await updateDoc(doc(db, 'wallets', originalWalletId), {
+          balance: increment(originalDelta),
+        });
+      }
 
-      if (originalWalletId === walletId) {
+      // 2. Apply new transaction balance effect
+      if (type === 'transfer') {
         await updateDoc(doc(db, 'wallets', walletId), {
-          balance: increment(originalDelta + newDelta),
+          balance: increment(-amt),
+        });
+        await updateDoc(doc(db, 'wallets', toWalletId), {
+          balance: increment(amt),
         });
       } else {
-        await updateDoc(doc(db, 'wallets', originalWalletId), { balance: increment(originalDelta) });
-        await updateDoc(doc(db, 'wallets', walletId), { balance: increment(newDelta) });
+        const newDelta = type === 'income' ? amt : -amt;
+        await updateDoc(doc(db, 'wallets', walletId), {
+          balance: increment(newDelta),
+        });
       }
 
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (e) {}
-      Toast.show({ type: 'success', text1: 'Updated ✓' });
+      
+      const label = type === 'transfer' ? 'Transfer' : type.charAt(0).toUpperCase() + type.slice(1);
+      Toast.show({ type: 'success', text1: `${label} updated ✓` });
       if (router.canGoBack()) {
         router.back();
       } else {
@@ -258,10 +314,21 @@ export default function EditExpenseModal() {
           await deleteDoc(doc(db, 'expenses', id));
           
           // Reverse original wallet balance
-          const originalDelta = originalType === 'income' ? -originalAmount : originalAmount;
-          await updateDoc(doc(db, 'wallets', originalWalletId), {
-            balance: increment(originalDelta),
-          });
+          if (originalType === 'transfer') {
+            await updateDoc(doc(db, 'wallets', originalWalletId), {
+              balance: increment(originalAmount),
+            });
+            if (originalToWalletId) {
+              await updateDoc(doc(db, 'wallets', originalToWalletId), {
+                balance: increment(-originalAmount),
+              });
+            }
+          } else {
+            const originalDelta = originalType === 'income' ? -originalAmount : originalAmount;
+            await updateDoc(doc(db, 'wallets', originalWalletId), {
+              balance: increment(originalDelta),
+            });
+          }
 
           try {
             await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -280,7 +347,6 @@ export default function EditExpenseModal() {
       }
     );
   };
-
   if (loading) {
     return (
       <SafeAreaView style={styles.safe}>
@@ -311,20 +377,26 @@ export default function EditExpenseModal() {
           </View>
 
           {/* Type pill selector */}
-          <View style={styles.pillRow}>
-            {(['expense', 'income', 'savings'] as TransactionType[]).map((t) => (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.pillRow, { marginBottom: 0 }]}
+            style={{ marginBottom: Spacing.base, maxHeight: 50, flexGrow: 0 }}
+          >
+            {(['expense', 'income', 'savings', 'transfer'] as TransactionType[]).map((t) => (
               <TouchableOpacity
                 key={t}
-                style={[styles.pill, type === t && styles.pillActive]}
+                style={[styles.pill, type === t && styles.pillActive, { minWidth: 105, marginRight: Spacing.xs }]}
                 onPress={() => { setType(t); Haptics.selectionAsync(); }}
+                activeOpacity={0.8}
               >
                 {type === t && <Text style={styles.pillTick}>✓ </Text>}
                 <Text style={[styles.pillText, type === t && styles.pillTextActive]}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t === 'transfer' ? 'Transfer' : t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* Amount */}
@@ -360,7 +432,7 @@ export default function EditExpenseModal() {
             </TouchableOpacity>
 
             {/* Wallet selector */}
-            <Text style={styles.fieldLabel}>Wallet</Text>
+            <Text style={styles.fieldLabel}>{type === 'transfer' ? 'From wallet' : 'Wallet'}</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.walletPillsRow}>
               {wallets.map((w) => {
                 const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
@@ -378,42 +450,70 @@ export default function EditExpenseModal() {
               })}
             </ScrollView>
 
-            {/* Category Scroll Row */}
-            <Text style={styles.fieldLabel}>Category</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.catScrollRow}
-            >
-              {sortedCategories.map((c) => {
-                const selected = category === c.key;
-                return (
+            {type === 'transfer' && (
+              <>
+                <Text style={styles.fieldLabel}>To wallet</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.walletPillsRow}>
+                  {wallets.map((w) => {
+                    const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                    const selected = toWalletId === w.id;
+                    const isSource = walletId === w.id;
+                    if (isSource) return null; // Can't select same wallet
+                    return (
+                      <TouchableOpacity
+                        key={w.id}
+                        style={[styles.walletPill, { backgroundColor: wColors.bg }, selected && styles.walletPillSelected]}
+                        onPress={() => { setToWalletId(w.id); Haptics.selectionAsync(); }}
+                      >
+                        {selected && <Text style={[styles.walletTick, { color: wColors.text }]}>✓ </Text>}
+                        <Text style={[styles.walletPillText, { color: wColors.text }]}>{w.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+
+            {type !== 'transfer' && (
+              <>
+                {/* Category Scroll Row */}
+                <Text style={styles.fieldLabel}>Category</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.catScrollRow}
+                >
+                  {sortedCategories.map((c) => {
+                    const selected = category === c.key;
+                    return (
+                      <TouchableOpacity
+                        key={c.key}
+                        style={[styles.catCard, selected && styles.catCardActive]}
+                        onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
+                      >
+                        {selected && (
+                          <View style={styles.catTick}>
+                            <Text style={styles.catTickText}>✓</Text>
+                          </View>
+                        )}
+                        <Text style={styles.catEmoji}>{c.emoji}</Text>
+                        <Text style={[styles.catLabel, selected && styles.catLabelActive]} numberOfLines={1}>
+                          {c.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {/* Add custom category */}
                   <TouchableOpacity
-                    key={c.key}
-                    style={[styles.catCard, selected && styles.catCardActive]}
-                    onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
+                    style={[styles.catCard, styles.catCardAdd]}
+                    onPress={() => setShowAddCat(true)}
                   >
-                    {selected && (
-                      <View style={styles.catTick}>
-                        <Text style={styles.catTickText}>✓</Text>
-                      </View>
-                    )}
-                    <Text style={styles.catEmoji}>{c.emoji}</Text>
-                    <Text style={[styles.catLabel, selected && styles.catLabelActive]} numberOfLines={1}>
-                      {c.label}
-                    </Text>
+                    <Text style={styles.catAddPlus}>+</Text>
+                    <Text style={styles.catAddLabel}>New</Text>
                   </TouchableOpacity>
-                );
-              })}
-              {/* Add custom category */}
-              <TouchableOpacity
-                style={[styles.catCard, styles.catCardAdd]}
-                onPress={() => setShowAddCat(true)}
-              >
-                <Text style={styles.catAddPlus}>+</Text>
-                <Text style={styles.catAddLabel}>New</Text>
-              </TouchableOpacity>
-            </ScrollView>
+                </ScrollView>
+              </>
+            )}
 
             {/* Note */}
             <Text style={styles.fieldLabel}>Note</Text>

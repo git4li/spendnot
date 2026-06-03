@@ -57,6 +57,7 @@ export default function AddExpenseModal() {
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('');
   const [walletId, setWalletId] = useState<string>('');
+  const [toWalletId, setToWalletId] = useState<string>('');
   const [category, setCategory] = useState<string>('food');
   const [note, setNote] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
@@ -77,6 +78,25 @@ export default function AddExpenseModal() {
       if (def) setWalletId(def);
     }
   }, [wallets, walletId]);
+
+  // Keep transfer wallet selections distinct
+  useEffect(() => {
+    if (type === 'transfer') {
+      if (walletId && toWalletId === walletId) {
+        const other = wallets.find((w) => w.id !== walletId);
+        if (other) {
+          setToWalletId(other.id);
+        } else {
+          setToWalletId('');
+        }
+      } else if (!toWalletId && walletId) {
+        const other = wallets.find((w) => w.id !== walletId);
+        if (other) {
+          setToWalletId(other.id);
+        }
+      }
+    }
+  }, [type, walletId, toWalletId, wallets]);
 
   // Load custom categories from Firestore
   useEffect(() => {
@@ -140,7 +160,6 @@ export default function AddExpenseModal() {
       Toast.show({ type: 'error', text1: 'Error', text2: err.message ?? 'Could not save category.' });
     }
   };
-
   const handleSave = async () => {
     if (!user) return;
     const amt = parseFloat(amount.replace(/,/g, ''));
@@ -150,6 +169,14 @@ export default function AddExpenseModal() {
     }
     if (!walletId) {
       Toast.show({ type: 'error', text1: 'No wallet', text2: 'Please select a wallet.' });
+      return;
+    }
+    if (type === 'transfer' && !toWalletId) {
+      Toast.show({ type: 'error', text1: 'No destination', text2: 'Please select a destination wallet.' });
+      return;
+    }
+    if (type === 'transfer' && walletId === toWalletId) {
+      Toast.show({ type: 'error', text1: 'Invalid transfer', text2: 'Source and destination wallets must be different.' });
       return;
     }
 
@@ -171,8 +198,9 @@ export default function AddExpenseModal() {
       await addDoc(collection(db, 'expenses'), {
         uid: user.uid,
         walletId,
+        ...(type === 'transfer' ? { toWalletId } : {}),
         type,
-        category,
+        category: type === 'transfer' ? 'transfer' : category,
         amount: amt,
         note: note.trim() || null,
         date: Timestamp.fromDate(finalDate),
@@ -180,17 +208,29 @@ export default function AddExpenseModal() {
         createdAt: Timestamp.now(),
       });
 
-      const delta = type === 'income' ? amt : -amt;
-      await updateDoc(doc(db, 'wallets', walletId), {
-        balance: increment(delta),
-      });
+      if (type === 'transfer') {
+        // Decrease source wallet, increase destination wallet
+        await updateDoc(doc(db, 'wallets', walletId), {
+          balance: increment(-amt),
+        });
+        await updateDoc(doc(db, 'wallets', toWalletId), {
+          balance: increment(amt),
+        });
+      } else {
+        const delta = type === 'income' ? amt : -amt;
+        await updateDoc(doc(db, 'wallets', walletId), {
+          balance: increment(delta),
+        });
+      }
 
       try {
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } catch (e) {}
+      
+      const label = type === 'transfer' ? 'Transfer' : type.charAt(0).toUpperCase() + type.slice(1);
       Toast.show({
         type: 'success',
-        text1: `${type.charAt(0).toUpperCase() + type.slice(1)} saved ✓`,
+        text1: `${label} saved ✓`,
         text2: `₹${amt.toLocaleString('en-IN')}`,
       });
       if (router.canGoBack()) {
@@ -227,21 +267,27 @@ export default function AddExpenseModal() {
             </TouchableOpacity>
           </View>
 
-          {/* Expense / Income / Savings pill selector */}
-          <View style={styles.pillRow}>
-            {(['expense', 'income', 'savings'] as TransactionType[]).map((t) => (
+          {/* Expense / Income / Savings / Self-transfer pill selector */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.pillRow, { marginBottom: 0 }]}
+            style={{ marginBottom: Spacing.base, maxHeight: 50, flexGrow: 0 }}
+          >
+            {(['expense', 'income', 'savings', 'transfer'] as TransactionType[]).map((t) => (
               <TouchableOpacity
                 key={t}
-                style={[styles.pill, type === t && styles.pillActive]}
+                style={[styles.pill, type === t && styles.pillActive, { minWidth: 105, marginRight: Spacing.xs }]}
                 onPress={() => { setType(t); Haptics.selectionAsync(); }}
+                activeOpacity={0.8}
               >
                 {type === t && <Text style={styles.pillTick}>✓ </Text>}
                 <Text style={[styles.pillText, type === t && styles.pillTextActive]}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                  {t === 'transfer' ? 'Transfer' : t.charAt(0).toUpperCase() + t.slice(1)}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {/* Amount */}
@@ -277,7 +323,7 @@ export default function AddExpenseModal() {
             </TouchableOpacity>
 
             {/* Wallet selector */}
-            <Text style={styles.fieldLabel}>From wallet</Text>
+            <Text style={styles.fieldLabel}>{type === 'transfer' ? 'From wallet' : 'From wallet'}</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -299,42 +345,74 @@ export default function AddExpenseModal() {
               })}
             </ScrollView>
 
-            {/* Category Scroll Row */}
-            <Text style={styles.fieldLabel}>Category</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.catScrollRow}
-            >
-              {sortedCategories.map((c) => {
-                const selected = category === c.key;
-                return (
+            {type === 'transfer' && (
+              <>
+                <Text style={styles.fieldLabel}>To wallet</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.walletPillsRow}
+                >
+                  {wallets.map((w) => {
+                    const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                    const selected = toWalletId === w.id;
+                    const isSource = walletId === w.id;
+                    if (isSource) return null; // Can't select same wallet
+                    return (
+                      <TouchableOpacity
+                        key={w.id}
+                        style={[styles.walletPill, { backgroundColor: wColors.bg }, selected && styles.walletPillSelected]}
+                        onPress={() => { setToWalletId(w.id); Haptics.selectionAsync(); }}
+                      >
+                        {selected && <Text style={[styles.walletTick, { color: wColors.text }]}>✓ </Text>}
+                        <Text style={[styles.walletPillText, { color: wColors.text }]}>{w.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            )}
+
+            {type !== 'transfer' && (
+              <>
+                {/* Category Scroll Row */}
+                <Text style={styles.fieldLabel}>Category</Text>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.catScrollRow}
+                >
+                  {sortedCategories.map((c) => {
+                    const selected = category === c.key;
+                    return (
+                      <TouchableOpacity
+                        key={c.key}
+                        style={[styles.catCard, selected && styles.catCardActive]}
+                        onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
+                      >
+                        {selected && (
+                          <View style={styles.catTick}>
+                            <Text style={styles.catTickText}>✓</Text>
+                          </View>
+                        )}
+                        <Text style={styles.catEmoji}>{c.emoji}</Text>
+                        <Text style={[styles.catLabel, selected && styles.catLabelActive]} numberOfLines={1}>
+                          {c.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                  {/* Add custom category */}
                   <TouchableOpacity
-                    key={c.key}
-                    style={[styles.catCard, selected && styles.catCardActive]}
-                    onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
+                    style={[styles.catCard, styles.catCardAdd]}
+                    onPress={() => setShowAddCat(true)}
                   >
-                    {selected && (
-                      <View style={styles.catTick}>
-                        <Text style={styles.catTickText}>✓</Text>
-                      </View>
-                    )}
-                    <Text style={styles.catEmoji}>{c.emoji}</Text>
-                    <Text style={[styles.catLabel, selected && styles.catLabelActive]} numberOfLines={1}>
-                      {c.label}
-                    </Text>
+                    <Text style={styles.catAddPlus}>+</Text>
+                    <Text style={styles.catAddLabel}>New</Text>
                   </TouchableOpacity>
-                );
-              })}
-              {/* Add custom category */}
-              <TouchableOpacity
-                style={[styles.catCard, styles.catCardAdd]}
-                onPress={() => setShowAddCat(true)}
-              >
-                <Text style={styles.catAddPlus}>+</Text>
-                <Text style={styles.catAddLabel}>New</Text>
-              </TouchableOpacity>
-            </ScrollView>
+                </ScrollView>
+              </>
+            )}
 
             {/* Note */}
             <Text style={styles.fieldLabel}>Note</Text>

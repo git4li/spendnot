@@ -31,12 +31,13 @@ export interface Wallet {
 }
 
 // ── Expense ───────────────────────────────────
-export type TransactionType = 'expense' | 'income' | 'savings';
+export type TransactionType = 'expense' | 'income' | 'savings' | 'transfer';
 
 export interface Expense {
   id: string;
   uid: string;
   walletId: string;
+  toWalletId?: string; // Optional destination wallet for self-transfers
   type: TransactionType;
   category: CategoryKey;
   amount: number;

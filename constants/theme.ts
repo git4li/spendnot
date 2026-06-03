@@ -168,8 +168,10 @@ export const CATEGORIES: CategoryDef[] = [
   { key: 'entertainment', label: 'Entertain', emoji: '🎬' },
   { key: 'other', label: 'Other', emoji: '📦' },
 ];
-
 export const getCategoryDef = (key: string): CategoryDef => {
+  if (key === 'transfer') {
+    return { key: 'transfer', label: 'Transfer', emoji: '🔄' };
+  }
   const found = CATEGORIES.find((c) => c.key === key);
   if (found) return found;
   // Custom categories stored as "emoji:label"

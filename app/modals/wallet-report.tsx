@@ -81,11 +81,12 @@ export default function WalletReportModal() {
     const q = query(
       collection(db, 'expenses'),
       where('uid', '==', auth.currentUser.uid),
-      where('walletId', '==', walletId),
       orderBy('date', 'desc'),
     );
     getDocs(q).then((snap) => {
-      setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Expense)));
+      const allExpenses = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Expense));
+      const filtered = allExpenses.filter(e => e.walletId === walletId || e.toWalletId === walletId);
+      setExpenses(filtered);
       setLoading(false);
     });
   }, [walletId]);
@@ -349,21 +350,38 @@ export default function WalletReportModal() {
             <View style={styles.txList}>
               {expenses.map((e) => {
                 const cat = getCategoryDef(e.category);
+                let displayCatLabel = cat.label;
+                let isTransferIn = false;
+                if (e.type === 'transfer') {
+                  if (e.toWalletId === walletId) {
+                    isTransferIn = true;
+                    const fromName = wallets.find(w => w.id === e.walletId)?.name ?? 'Other Wallet';
+                    displayCatLabel = `Transfer from ${fromName}`;
+                  } else {
+                    const toName = wallets.find(w => w.id === e.toWalletId)?.name ?? 'Other Wallet';
+                    displayCatLabel = `Transfer to ${toName}`;
+                  }
+                }
+
+                const isIncoming = e.type === 'income' || (e.type === 'transfer' && isTransferIn);
+                const sign = isIncoming ? '+' : '−';
+                const amountColor = isIncoming ? Colors.income : Colors.expense;
+
                 return (
                   <View key={e.id} style={styles.txRow}>
                     <View style={styles.txEmoji}>
                       <Text style={{ fontSize: 16 }}>{cat.emoji}</Text>
                     </View>
                     <View style={styles.txInfo}>
-                      <Text style={styles.txCat}>{cat.label}</Text>
+                      <Text style={styles.txCat}>{displayCatLabel}</Text>
                       {e.note ? <Text style={styles.txNote}>{e.note}</Text> : null}
                       <Text style={styles.txDate}>{formatDate(e.date)}</Text>
                     </View>
                     <Text style={[
                       styles.txAmt,
-                      { color: e.type === 'income' ? Colors.income : Colors.expense },
+                      { color: amountColor },
                     ]}>
-                      {e.type === 'income' ? '+' : '−'}₹{e.amount.toLocaleString('en-IN')}
+                      {sign}₹{e.amount.toLocaleString('en-IN')}
                     </Text>
                   </View>
                 );
