@@ -26,7 +26,18 @@ import { Timestamp } from 'firebase/firestore';
 
 function formatDate(ts: Timestamp): string {
   const d = ts.toDate();
-  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' });
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+  const isYesterday = d.toDateString() === yesterday.toDateString();
+  
+  const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  const dateStr = isToday
+    ? `Today, ${timeStr}`
+    : isYesterday
+    ? `Yesterday, ${timeStr}`
+    : `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}, ${timeStr}`;
+  return dateStr;
 }
 
 const getCreditCycleInfo = (cycleStart: number, dueDay: number) => {

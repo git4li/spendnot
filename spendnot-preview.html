@@ -1,0 +1,1953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPENDNOT — UI Preview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@900&family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --canvas-ice: #f2f2f2;
+      --polar-white: #ffffff;
+      --carbon-black: #000000;
+      --deep-graphite: #3a3a3a;
+      --ghost-gray: #e6e4e4;
+      --muted-stone: #6e6e6e;
+      --soft-stone: #888888;
+      --cream-card: #e7e3bf;
+      --power-pink: #fa00ff;
+      --sky-blue: #02bbff;
+      --lime-pop: #adff02;
+    }
+
+    body {
+      background: var(--canvas-ice);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+      padding: 40px;
+    }
+
+    .page-header {
+      margin-bottom: 36px;
+    }
+
+    .page-title {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 40px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+      line-height: 1;
+    }
+
+    .page-date {
+      font-family: 'Inter', sans-serif;
+      font-weight: 400;
+      font-size: 14px;
+      color: var(--muted-stone);
+      letter-spacing: -0.02em;
+      margin-top: 8px;
+    }
+
+    .frames-row {
+      display: flex;
+      flex-direction: row;
+      gap: 24px;
+      align-items: flex-start;
+      overflow-x: auto;
+      padding-bottom: 24px;
+    }
+
+    .frame-wrapper {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .frame-label {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 18px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .phone-frame {
+      width: 390px;
+      height: 844px;
+      background: var(--polar-white);
+      border-radius: 44px;
+      border: 1px solid var(--carbon-black);
+      overflow: hidden;
+      overflow-y: auto;
+      position: relative;
+      scrollbar-width: none;
+    }
+    .phone-frame::-webkit-scrollbar { display: none; }
+
+    /* ── SHARED COMPONENTS ── */
+    .screen {
+      min-height: 844px;
+      background: var(--canvas-ice);
+      padding: 52px 20px 100px;
+      position: relative;
+      font-family: 'Inter', sans-serif;
+      letter-spacing: -0.02em;
+    }
+
+    /* Bottom Nav */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      width: 390px;
+      background: var(--polar-white);
+      border-top: 1px solid var(--ghost-gray);
+      padding: 12px 20px 16px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      z-index: 10;
+    }
+    .nav-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--muted-stone);
+      letter-spacing: -0.02em;
+    }
+    .nav-item.active {
+      background: var(--carbon-black);
+      color: var(--polar-white);
+      border-radius: 100px;
+      padding: 6px 16px;
+    }
+    .nav-icon {
+      font-size: 20px;
+    }
+    .nav-item.active .nav-icon {
+      display: none;
+    }
+
+    /* Pill Button */
+    .pill-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 100px;
+      background: var(--carbon-black);
+      color: var(--polar-white);
+      font-family: 'Inter', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+      border: none;
+      cursor: pointer;
+      padding: 14px 28px;
+    }
+    .pill-btn.full-width {
+      width: 100%;
+    }
+    .pill-btn.small {
+      font-size: 12px;
+      padding: 8px 16px;
+    }
+    .pill-btn.outline {
+      background: transparent;
+      border: 2px solid var(--carbon-black);
+      color: var(--carbon-black);
+    }
+    .pill-btn.ghost {
+      background: var(--ghost-gray);
+      color: var(--carbon-black);
+    }
+
+    /* Screen Heading */
+    .screen-title {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 32px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+      line-height: 1.1;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--polar-white);
+      border-radius: 16px;
+    }
+    .card.border {
+      border: 1px solid var(--ghost-gray);
+    }
+
+    /* Section Label */
+    .section-label {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+      margin-top: 20px;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 1 — ONBOARDING
+    ────────────────────────────────────────────────────── */
+    .s1 { background: var(--canvas-ice); }
+
+    .s1-step-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .s1-step-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ghost-gray);
+    }
+    .s1-step-dot.active {
+      width: 24px;
+      border-radius: 100px;
+      background: var(--carbon-black);
+    }
+
+    .wallet-type-cards {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .wallet-type-card {
+      border-radius: 16px;
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border: 2px solid transparent;
+      cursor: pointer;
+    }
+    .wallet-type-card.cash { background: var(--lime-pop); }
+    .wallet-type-card.credit { background: var(--carbon-black); color: var(--polar-white); }
+    .wallet-type-card.upi { background: var(--sky-blue); border-color: var(--carbon-black); }
+
+    .wallet-type-icon { font-size: 24px; }
+    .wallet-type-label {
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: -0.02em;
+    }
+    .wallet-type-sub {
+      font-size: 12px;
+      opacity: 0.6;
+      margin-top: 2px;
+    }
+
+    .input-field {
+      background: var(--ghost-gray);
+      border-radius: 12px;
+      border: none;
+      padding: 14px 16px;
+      font-family: 'Inter', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--carbon-black);
+      width: 100%;
+      letter-spacing: -0.02em;
+      outline: none;
+    }
+    .input-label {
+      font-weight: 700;
+      font-size: 12px;
+      color: var(--muted-stone);
+      margin-bottom: 6px;
+      letter-spacing: -0.02em;
+    }
+
+    .upi-app-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    .upi-pill {
+      border-radius: 100px;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      background: var(--ghost-gray);
+      color: var(--carbon-black);
+      cursor: pointer;
+    }
+    .upi-pill.active {
+      background: var(--carbon-black);
+      color: var(--polar-white);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-top: 1px solid var(--ghost-gray);
+      margin-top: 16px;
+    }
+    .toggle-label {
+      font-weight: 500;
+      font-size: 14px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+    }
+    .toggle {
+      width: 44px; height: 26px;
+      border-radius: 100px;
+      background: var(--carbon-black);
+      position: relative;
+      cursor: pointer;
+    }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 20px; height: 20px;
+      background: var(--polar-white);
+      border-radius: 50%;
+      top: 3px;
+      right: 3px;
+    }
+    .toggle.off { background: var(--ghost-gray); }
+    .toggle.off::after { right: auto; left: 3px; }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 2 — DASHBOARD
+    ────────────────────────────────────────────────────── */
+    .s2-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .s2-greeting-name {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 28px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+    }
+    .s2-greeting-sub {
+      font-size: 14px;
+      color: var(--muted-stone);
+      letter-spacing: -0.02em;
+      margin-top: 2px;
+    }
+    .bell-icon {
+      width: 40px; height: 40px;
+      background: var(--polar-white);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      border: 1px solid var(--ghost-gray);
+    }
+
+    .wallet-cards-scroll {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      margin: 0 -20px;
+      padding: 0 20px 8px;
+      scrollbar-width: none;
+    }
+    .wallet-cards-scroll::-webkit-scrollbar { display: none; }
+
+    .wallet-card-mini {
+      flex-shrink: 0;
+      width: 160px;
+      height: 90px;
+      border-radius: 20px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+    .wallet-card-mini.cash { background: var(--lime-pop); }
+    .wallet-card-mini.credit { background: var(--carbon-black); }
+    .wallet-card-mini.gpay { background: var(--sky-blue); }
+    .wallet-card-mini.phonepe { background: var(--power-pink); }
+    .wallet-card-mini.add {
+      background: transparent;
+      border: 2px dashed var(--ghost-gray);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .wc-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: rgba(0,0,0,0.5);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .wc-label.light { color: rgba(255,255,255,0.5); }
+    .wc-amount {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 20px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+    }
+    .wc-amount.light { color: var(--polar-white); }
+    .wc-default-badge {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: var(--carbon-black);
+      color: var(--polar-white);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 100px;
+      letter-spacing: 0.04em;
+    }
+    .wc-add-text {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted-stone);
+      text-align: center;
+    }
+
+    .summary-card {
+      background: var(--carbon-black);
+      border-radius: 38px;
+      padding: 24px 22px;
+      margin-top: 16px;
+    }
+    .summary-month {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--soft-stone);
+      letter-spacing: -0.02em;
+    }
+    .summary-amount {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 40px;
+      color: var(--polar-white);
+      letter-spacing: -0.033em;
+      margin: 8px 0 16px;
+      line-height: 1;
+    }
+    .summary-row {
+      display: flex;
+      gap: 0;
+      justify-content: space-between;
+    }
+    .summary-stat {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .summary-stat-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--soft-stone);
+      letter-spacing: -0.02em;
+    }
+    .summary-stat-val {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 16px;
+      letter-spacing: -0.033em;
+    }
+
+    .expense-list { margin-top: 16px; }
+    .expense-row {
+      display: flex;
+      align-items: center;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--ghost-gray);
+      gap: 10px;
+    }
+    .expense-row:last-child { border-bottom: none; }
+    .expense-emoji {
+      width: 38px; height: 38px;
+      background: var(--ghost-gray);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .expense-info { flex: 1; }
+    .expense-cat {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+    }
+    .expense-wallet {
+      font-size: 12px;
+      color: var(--muted-stone);
+      margin-top: 2px;
+    }
+    .expense-right { text-align: right; }
+    .expense-amount {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+    }
+    .expense-time {
+      font-size: 11px;
+      color: var(--muted-stone);
+      margin-top: 2px;
+    }
+
+    .fab {
+      position: fixed;
+      bottom: 80px;
+      right: 20px;
+      width: 52px; height: 52px;
+      background: var(--carbon-black);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--polar-white);
+      font-size: 26px;
+      font-weight: 300;
+      z-index: 9;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 3 — WALLETS
+    ────────────────────────────────────────────────────── */
+    .s3-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    .big-wallet-card {
+      border-radius: 46px;
+      height: 130px;
+      padding: 20px 24px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .big-wallet-card.cash { background: var(--lime-pop); }
+    .big-wallet-card.credit { background: var(--carbon-black); color: var(--polar-white); }
+    .big-wallet-card.gpay { background: var(--sky-blue); }
+    .big-wallet-card.phonepe { background: var(--power-pink); }
+
+    .bwc-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .bwc-name {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+    .bwc-amount {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 32px;
+      letter-spacing: -0.033em;
+      line-height: 1;
+    }
+    .bwc-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .bwc-last {
+      font-size: 11px;
+      opacity: 0.6;
+    }
+    .bwc-default-badge {
+      background: var(--carbon-black);
+      color: var(--polar-white);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 100px;
+    }
+
+    .spent-pill {
+      display: inline-flex;
+      align-items: center;
+      background: var(--ghost-gray);
+      border-radius: 100px;
+      padding: 7px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted-stone);
+      margin-bottom: 14px;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 4 — ADD EXPENSE SHEET
+    ────────────────────────────────────────────────────── */
+    .s4-bg {
+      background: var(--canvas-ice);
+      min-height: 844px;
+      position: relative;
+    }
+    .s4-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      border-radius: 44px;
+    }
+    .s4-sheet {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--polar-white);
+      border-radius: 46px 46px 44px 44px;
+      padding: 16px 20px 32px;
+      min-height: 760px;
+    }
+    .drag-handle {
+      width: 40px; height: 4px;
+      background: var(--carbon-black);
+      border-radius: 100px;
+      margin: 0 auto 20px;
+    }
+    .type-toggle {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+    .type-pill {
+      border-radius: 100px;
+      padding: 10px 22px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: -0.02em;
+    }
+    .type-pill.active {
+      background: var(--carbon-black);
+      color: var(--polar-white);
+    }
+    .type-pill.inactive {
+      background: var(--ghost-gray);
+      color: var(--muted-stone);
+    }
+
+    .amount-how {
+      font-size: 14px;
+      color: var(--muted-stone);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .amount-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      border-bottom: 2px solid var(--carbon-black);
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+    }
+    .amount-currency {
+      font-size: 28px;
+      color: var(--muted-stone);
+      font-weight: 400;
+      padding-bottom: 4px;
+    }
+    .amount-value {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 60px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+      line-height: 1;
+    }
+
+    .field-label {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+      margin-bottom: 10px;
+    }
+
+    .wallet-pills-scroll {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      scrollbar-width: none;
+    }
+    .wallet-pills-scroll::-webkit-scrollbar { display: none; }
+
+    .wallet-pill {
+      flex-shrink: 0;
+      border-radius: 100px;
+      padding: 9px 16px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 2px solid transparent;
+    }
+    .wallet-pill.cash { background: var(--lime-pop); color: var(--carbon-black); border-color: var(--carbon-black); }
+    .wallet-pill.credit { background: var(--carbon-black); color: var(--polar-white); }
+    .wallet-pill.gpay { background: var(--sky-blue); color: var(--carbon-black); }
+    .wallet-pill.phonepe { background: var(--power-pink); color: var(--carbon-black); }
+    .wallet-pill.new-ghost {
+      background: transparent;
+      border: 2px dashed var(--ghost-gray);
+      color: var(--muted-stone);
+    }
+
+    .category-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .cat-card {
+      background: var(--ghost-gray);
+      border-radius: 16px;
+      padding: 10px 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .cat-card.active {
+      background: var(--carbon-black);
+      color: var(--polar-white);
+    }
+    .cat-emoji { font-size: 20px; }
+    .cat-name { font-size: 11px; font-weight: 500; letter-spacing: -0.02em; }
+
+    .date-note-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .dn-pill {
+      flex: 1;
+      background: var(--ghost-gray);
+      border-radius: 100px;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted-stone);
+      text-align: center;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 5 — BUDGETS
+    ────────────────────────────────────────────────────── */
+    .period-pills {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+    .period-pill {
+      border-radius: 100px;
+      padding: 9px 18px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: -0.02em;
+    }
+    .period-pill.active {
+      background: var(--carbon-black);
+      color: var(--polar-white);
+    }
+    .period-pill.inactive {
+      background: var(--ghost-gray);
+      color: var(--muted-stone);
+    }
+
+    .budget-summary-card {
+      background: var(--cream-card);
+      border-radius: 46px;
+      padding: 24px 22px;
+      margin-bottom: 20px;
+    }
+    .budget-summary-label {
+      font-size: 14px;
+      color: var(--muted-stone);
+      font-weight: 500;
+      letter-spacing: -0.02em;
+    }
+    .budget-summary-amount {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 36px;
+      color: var(--carbon-black);
+      letter-spacing: -0.033em;
+      margin: 8px 0 14px;
+      line-height: 1;
+    }
+    .progress-track {
+      height: 8px;
+      background: var(--ghost-gray);
+      border-radius: 100px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: 100px;
+      background: var(--carbon-black);
+    }
+    .progress-fill.pink { background: var(--power-pink); }
+    .progress-fill.blue { background: var(--sky-blue); }
+    .budget-meta {
+      font-size: 13px;
+      color: var(--muted-stone);
+      letter-spacing: -0.02em;
+    }
+
+    .budget-cat-card {
+      background: var(--polar-white);
+      border-radius: 16px;
+      border: 1px solid var(--ghost-gray);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+    }
+    .budget-cat-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .budget-cat-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--carbon-black);
+    }
+    .budget-cat-right {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted-stone);
+    }
+    .over-budget-label {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--power-pink);
+      margin-top: 6px;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 6 — RECURRING
+    ────────────────────────────────────────────────────── */
+    .recurring-card {
+      background: var(--polar-white);
+      border-radius: 16px;
+      border: 1px solid var(--ghost-gray);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .recurring-card.overdue {
+      border-left: 4px solid var(--power-pink);
+    }
+    .rc-icon {
+      width: 40px; height: 40px;
+      background: var(--ghost-gray);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+    .rc-info { flex: 1; }
+    .rc-name {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--carbon-black);
+    }
+    .rc-sub {
+      font-size: 12px;
+      color: var(--muted-stone);
+      margin-top: 2px;
+    }
+    .rc-due {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--sky-blue);
+      margin-top: 2px;
+    }
+    .rc-due.pink { color: var(--power-pink); }
+    .rc-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+    .rc-amount {
+      font-weight: 700;
+      font-size: 14px;
+      color: var(--carbon-black);
+    }
+    .rc-mark-btn {
+      background: var(--lime-pop);
+      color: var(--carbon-black);
+      border-radius: 100px;
+      padding: 5px 12px;
+      font-size: 11px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+    }
+    .rc-auto-badge {
+      background: var(--sky-blue);
+      color: var(--carbon-black);
+      border-radius: 100px;
+      padding: 4px 10px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 7 — REPORTS
+    ────────────────────────────────────────────────────── */
+    .reports-summary-card {
+      background: var(--carbon-black);
+      border-radius: 38px;
+      padding: 24px 22px;
+      margin-bottom: 16px;
+    }
+    .rsc-label {
+      font-size: 14px;
+      color: var(--soft-stone);
+      font-weight: 500;
+    }
+    .rsc-amount {
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 40px;
+      color: var(--polar-white);
+      letter-spacing: -0.033em;
+      margin: 8px 0 12px;
+      line-height: 1;
+    }
+    .rsc-row {
+      display: flex;
+      gap: 16px;
+    }
+    .rsc-stat {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: -0.02em;
+    }
+
+    /* Chart */
+    .chart-card {
+      background: var(--polar-white);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .chart-title {
+      font-weight: 700;
+      font-size: 16px;
+      color: var(--carbon-black);
+      margin-bottom: 16px;
+    }
+    .line-chart {
+      width: 100%;
+      height: 100px;
+    }
+    .chart-axis-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 6px;
+    }
+    .chart-axis-label {
+      font-size: 10px;
+      color: var(--ghost-gray);
+      font-weight: 500;
+    }
+
+    /* Category bars */
+    .cat-bars-section { margin-top: 4px; }
+    .cat-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .cat-bar-label {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted-stone);
+      width: 76px;
+      flex-shrink: 0;
+    }
+    .cat-bar-track {
+      flex: 1;
+      height: 8px;
+      background: var(--ghost-gray);
+      border-radius: 100px;
+      overflow: hidden;
+    }
+    .cat-bar-fill {
+      height: 100%;
+      border-radius: 100px;
+      background: var(--carbon-black);
+    }
+    .cat-bar-fill.pink { background: var(--power-pink); }
+    .cat-bar-amount {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--carbon-black);
+      width: 44px;
+      text-align: right;
+      flex-shrink: 0;
+    }
+
+    /* ──────────────────────────────────────────────────────
+       SCREEN 8 — PROFILE
+    ────────────────────────────────────────────────────── */
+    .profile-user-card {
+      background: var(--polar-white);
+      border-radius: 16px;
+      border: 1px solid var(--ghost-gray);
+      padding: 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+    .avatar {
+      width: 56px; height: 56px;
+      background: var(--carbon-black);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Montserrat', sans-serif;
+      font-weight: 900;
+      font-size: 20px;
+      color: var(--polar-white);
+      letter-spacing: -0.02em;
+      flex-shrink: 0;
+    }
+    .profile-user-info { flex: 1; }
+    .profile-name {
+      font-weight: 700;
+      font-size: 18px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+    }
+    .profile-email {
+      font-size: 14px;
+      color: var(--muted-stone);
+      margin-top: 2px;
+    }
+    .pencil-icon {
+      font-size: 18px;
+      color: var(--muted-stone);
+    }
+
+    .settings-section-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted-stone);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      background: var(--ghost-gray);
+      padding: 6px 12px;
+      border-radius: 8px;
+      margin-bottom: 4px;
+      margin-top: 16px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 0;
+      border-bottom: 1px solid var(--ghost-gray);
+    }
+    .settings-row:last-child { border-bottom: none; }
+    .settings-row-left {
+      font-weight: 500;
+      font-size: 15px;
+      color: var(--carbon-black);
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .settings-row-left.pink { color: var(--power-pink); }
+    .settings-row-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      color: var(--muted-stone);
+    }
+    .chevron {
+      font-size: 16px;
+      color: var(--muted-stone);
+    }
+    .lime-dot {
+      width: 10px; height: 10px;
+      background: var(--lime-pop);
+      border-radius: 50%;
+    }
+
+    .settings-card {
+      background: var(--polar-white);
+      border-radius: 16px;
+      border: 1px solid var(--ghost-gray);
+      padding: 0 14px;
+      margin-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-header">
+  <div class="page-title">SPENDNOT — UI Preview</div>
+  <div class="page-date">May 30, 2026</div>
+</div>
+
+<div class="frames-row">
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 1 — ONBOARDING
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">01 — Onboarding</div>
+    <div class="phone-frame">
+      <div class="screen s1" style="padding-top: 56px;">
+
+        <div class="s1-step-row">
+          <div class="s1-step-dot"></div>
+          <div class="s1-step-dot"></div>
+          <div class="s1-step-dot active"></div>
+          <div class="s1-step-dot"></div>
+        </div>
+
+        <div style="font-size:13px; font-weight:500; color:var(--muted-stone); letter-spacing:-0.02em; margin-bottom:8px;">Step 3 of 4</div>
+        <div class="screen-title" style="margin-bottom:24px;">Add your first<br>wallet</div>
+
+        <div class="wallet-type-cards">
+          <div class="wallet-type-card cash">
+            <div class="wallet-type-icon">💵</div>
+            <div>
+              <div class="wallet-type-label">Cash</div>
+              <div class="wallet-type-sub">Physical cash on hand</div>
+            </div>
+          </div>
+          <div class="wallet-type-card credit">
+            <div class="wallet-type-icon">💳</div>
+            <div>
+              <div class="wallet-type-label" style="color:var(--polar-white);">Credit Card</div>
+              <div class="wallet-type-sub" style="color:rgba(255,255,255,0.5);">Bank-issued credit card</div>
+            </div>
+          </div>
+          <div class="wallet-type-card upi">
+            <div class="wallet-type-icon">📱</div>
+            <div>
+              <div class="wallet-type-label">UPI</div>
+              <div class="wallet-type-sub">GPay, PhonePe & more</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <div class="input-label">BANK NAME</div>
+          <input class="input-field" type="text" value="State Bank of India" readonly>
+        </div>
+
+        <div>
+          <div class="input-label">UPI APP</div>
+          <div class="upi-app-pills">
+            <div class="upi-pill active">GPay</div>
+            <div class="upi-pill">PhonePe</div>
+            <div class="upi-pill">Other</div>
+          </div>
+        </div>
+
+        <div class="toggle-row">
+          <div class="toggle-label">Set as default wallet</div>
+          <div class="toggle"></div>
+        </div>
+
+        <div style="margin-top:24px;">
+          <button class="pill-btn full-width" style="height:54px;">Start Tracking</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 2 — DASHBOARD
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">02 — Dashboard</div>
+    <div class="phone-frame" id="frame-dashboard">
+      <div class="screen" style="padding-bottom:120px;">
+
+        <div class="s2-topbar">
+          <div>
+            <div class="s2-greeting-name">Hi, Ali! 👋</div>
+            <div class="s2-greeting-sub">Let's see where it went.</div>
+          </div>
+          <div class="bell-icon">🔔</div>
+        </div>
+
+        <!-- Wallet Cards -->
+        <div class="wallet-cards-scroll">
+          <div class="wallet-card-mini cash">
+            <div class="wc-label">Cash</div>
+            <div class="wc-amount">₹4,200</div>
+            <div class="wc-default-badge">DEFAULT</div>
+          </div>
+          <div class="wallet-card-mini credit">
+            <div class="wc-label light">HDFC Credit</div>
+            <div class="wc-amount light">₹18,500</div>
+          </div>
+          <div class="wallet-card-mini gpay">
+            <div class="wc-label">GPay – SBI</div>
+            <div class="wc-amount">₹2,340</div>
+          </div>
+          <div class="wallet-card-mini phonepe">
+            <div class="wc-label">PhonePe</div>
+            <div class="wc-amount">₹890</div>
+          </div>
+          <div class="wallet-card-mini add">
+            <div class="wc-add-text">+ Add<br>Wallet</div>
+          </div>
+        </div>
+
+        <!-- Summary Card -->
+        <div class="summary-card">
+          <div class="summary-month">This Month</div>
+          <div class="summary-amount">₹12,450</div>
+          <div class="summary-row">
+            <div class="summary-stat">
+              <div class="summary-stat-label">Income</div>
+              <div class="summary-stat-val" style="color:var(--lime-pop);">₹28,000</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Expenses</div>
+              <div class="summary-stat-val" style="color:var(--power-pink);">₹12,450</div>
+            </div>
+            <div class="summary-stat">
+              <div class="summary-stat-label">Savings</div>
+              <div class="summary-stat-val" style="color:var(--sky-blue);">₹15,550</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Recent Expenses -->
+        <div style="margin-top:20px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div class="section-label" style="margin:0;">Recent</div>
+            <div style="font-size:12px; font-weight:700; color:var(--muted-stone);">See all →</div>
+          </div>
+          <div class="expense-list">
+            <div class="expense-row">
+              <div class="expense-emoji">🍔</div>
+              <div class="expense-info">
+                <div class="expense-cat">Food</div>
+                <div class="expense-wallet">GPay – SBI</div>
+              </div>
+              <div class="expense-right">
+                <div class="expense-amount" style="color:var(--power-pink);">−₹450</div>
+                <div class="expense-time">Today, 1:32 PM</div>
+              </div>
+            </div>
+            <div class="expense-row">
+              <div class="expense-emoji">🚕</div>
+              <div class="expense-info">
+                <div class="expense-cat">Transport</div>
+                <div class="expense-wallet">Cash</div>
+              </div>
+              <div class="expense-right">
+                <div class="expense-amount" style="color:var(--power-pink);">−₹120</div>
+                <div class="expense-time">Today, 10:15 AM</div>
+              </div>
+            </div>
+            <div class="expense-row">
+              <div class="expense-emoji">🛒</div>
+              <div class="expense-info">
+                <div class="expense-cat">Shopping</div>
+                <div class="expense-wallet">HDFC Credit</div>
+              </div>
+              <div class="expense-right">
+                <div class="expense-amount" style="color:var(--power-pink);">−₹2,100</div>
+                <div class="expense-time">Yesterday</div>
+              </div>
+            </div>
+            <div class="expense-row">
+              <div class="expense-emoji">💊</div>
+              <div class="expense-info">
+                <div class="expense-cat">Health</div>
+                <div class="expense-wallet">Cash</div>
+              </div>
+              <div class="expense-right">
+                <div class="expense-amount" style="color:var(--power-pink);">−₹340</div>
+                <div class="expense-time">Yesterday</div>
+              </div>
+            </div>
+            <div class="expense-row">
+              <div class="expense-emoji">⚡</div>
+              <div class="expense-info">
+                <div class="expense-cat">Bills</div>
+                <div class="expense-wallet">PhonePe</div>
+              </div>
+              <div class="expense-right">
+                <div class="expense-amount" style="color:var(--power-pink);">−₹649</div>
+                <div class="expense-time">Dec 28</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- FAB -->
+        <div class="fab">+</div>
+
+        <!-- Bottom Nav -->
+        <div class="bottom-nav">
+          <div class="nav-item active">🏠 Home</div>
+          <div class="nav-item">
+            <div class="nav-icon">👛</div>
+            <div>Wallets</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">📊</div>
+            <div>Reports</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">👤</div>
+            <div>Profile</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 3 — WALLETS
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">03 — Wallets</div>
+    <div class="phone-frame">
+      <div class="screen" style="padding-bottom:100px;">
+
+        <div class="s3-header">
+          <div class="screen-title">Wallets</div>
+          <button class="pill-btn small">+ Add</button>
+        </div>
+
+        <!-- Cash Card -->
+        <div class="big-wallet-card cash">
+          <div class="bwc-top">
+            <span>💵</span>
+            <div class="bwc-name">Cash</div>
+          </div>
+          <div class="bwc-amount">₹4,200</div>
+          <div class="bwc-bottom">
+            <div class="bwc-last">Last used: Today</div>
+            <div class="bwc-default-badge">DEFAULT</div>
+          </div>
+        </div>
+        <div class="spent-pill">Spent this month: ₹1,240</div>
+
+        <!-- HDFC Card -->
+        <div class="big-wallet-card credit">
+          <div class="bwc-top">
+            <span>💳</span>
+            <div class="bwc-name" style="color:var(--polar-white);">HDFC Credit · ****4521</div>
+          </div>
+          <div class="bwc-amount" style="color:var(--polar-white);">₹18,500</div>
+          <div class="bwc-bottom">
+            <div class="bwc-last" style="color:rgba(255,255,255,0.5);">Last used: Yesterday</div>
+          </div>
+        </div>
+        <div class="spent-pill">Spent this month: ₹4,800</div>
+
+        <!-- GPay Card -->
+        <div class="big-wallet-card gpay">
+          <div class="bwc-top">
+            <span>📱</span>
+            <div class="bwc-name">GPay – SBI</div>
+          </div>
+          <div class="bwc-amount">₹2,340</div>
+          <div class="bwc-bottom">
+            <div class="bwc-last">Last used: Today</div>
+          </div>
+        </div>
+        <div class="spent-pill">Spent this month: ₹2,760</div>
+
+        <!-- PhonePe Card -->
+        <div class="big-wallet-card phonepe">
+          <div class="bwc-top">
+            <span>📲</span>
+            <div class="bwc-name">PhonePe</div>
+          </div>
+          <div class="bwc-amount">₹890</div>
+          <div class="bwc-bottom">
+            <div class="bwc-last">Last used: Dec 28</div>
+          </div>
+        </div>
+        <div class="spent-pill">Spent this month: ₹649</div>
+
+        <!-- Bottom Nav -->
+        <div class="bottom-nav">
+          <div class="nav-item">
+            <div class="nav-icon">🏠</div>
+            <div>Home</div>
+          </div>
+          <div class="nav-item active">👛 Wallets</div>
+          <div class="nav-item">
+            <div class="nav-icon">📊</div>
+            <div>Reports</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">👤</div>
+            <div>Profile</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 4 — ADD EXPENSE SHEET
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">04 — Add Expense</div>
+    <div class="phone-frame">
+      <div style="position:relative; min-height:844px; background:var(--canvas-ice);">
+
+        <!-- Blurred BG glimpse -->
+        <div style="position:absolute; inset:0; background:linear-gradient(180deg, #e0e0e0 0%, #d4d4d4 100%); border-radius:44px;"></div>
+        <div style="position:absolute; inset:0; background:rgba(0,0,0,0.58); border-radius:44px; z-index:1;"></div>
+
+        <!-- Bottom Sheet -->
+        <div class="s4-sheet" style="z-index:2;">
+          <div class="drag-handle"></div>
+
+          <div class="type-toggle">
+            <div class="type-pill active">Expense</div>
+            <div class="type-pill inactive">Income</div>
+          </div>
+
+          <div class="amount-how">How much?</div>
+          <div class="amount-row">
+            <div class="amount-currency">₹</div>
+            <div class="amount-value">2,450</div>
+          </div>
+
+          <div class="field-label">From wallet</div>
+          <div class="wallet-pills-scroll">
+            <div class="wallet-pill cash">Cash</div>
+            <div class="wallet-pill credit">HDFC Credit</div>
+            <div class="wallet-pill gpay">GPay</div>
+            <div class="wallet-pill phonepe">PhonePe</div>
+            <div class="wallet-pill new-ghost">+ New</div>
+          </div>
+
+          <div class="field-label">Category</div>
+          <div class="category-grid">
+            <div class="cat-card active"><div class="cat-emoji">🍔</div><div class="cat-name">Food</div></div>
+            <div class="cat-card"><div class="cat-emoji">🚕</div><div class="cat-name">Transport</div></div>
+            <div class="cat-card"><div class="cat-emoji">🛒</div><div class="cat-name">Shopping</div></div>
+            <div class="cat-card"><div class="cat-emoji">⚡</div><div class="cat-name">Bills</div></div>
+            <div class="cat-card"><div class="cat-emoji">💊</div><div class="cat-name">Health</div></div>
+            <div class="cat-card"><div class="cat-emoji">🎬</div><div class="cat-name">Entertain</div></div>
+            <div class="cat-card"><div class="cat-emoji">📚</div><div class="cat-name">Education</div></div>
+            <div class="cat-card"><div class="cat-emoji">📦</div><div class="cat-name">Other</div></div>
+          </div>
+
+          <div class="date-note-row">
+            <div class="dn-pill">📅 Today</div>
+            <div class="dn-pill">✏️ Add note...</div>
+          </div>
+
+          <div class="toggle-row" style="margin-top:0; margin-bottom:16px;">
+            <div class="toggle-label">Mark as recurring</div>
+            <div class="toggle off"></div>
+          </div>
+
+          <button class="pill-btn full-width" style="height:54px;">Save Expense</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 5 — BUDGETS
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">05 — Budgets</div>
+    <div class="phone-frame">
+      <div class="screen" style="padding-bottom:100px;">
+
+        <div class="s3-header">
+          <div class="screen-title">Budgets</div>
+          <button class="pill-btn small">+ New Budget</button>
+        </div>
+
+        <div class="period-pills">
+          <div class="period-pill inactive">This Week</div>
+          <div class="period-pill active">This Month</div>
+          <div class="period-pill inactive">Custom</div>
+        </div>
+
+        <!-- Summary -->
+        <div class="budget-summary-card">
+          <div class="budget-summary-label">Total Budget</div>
+          <div class="budget-summary-amount">₹25,000</div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:57%;"></div>
+          </div>
+          <div class="budget-meta">₹14,200 spent · ₹10,800 remaining</div>
+        </div>
+
+        <div class="section-label">By Category</div>
+
+        <!-- Food -->
+        <div class="budget-cat-card">
+          <div class="budget-cat-top">
+            <div class="budget-cat-left">🍔 Food</div>
+            <div class="budget-cat-right">₹3,200 / ₹5,000</div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:64%;"></div>
+          </div>
+        </div>
+
+        <!-- Shopping — Over budget -->
+        <div class="budget-cat-card">
+          <div class="budget-cat-top">
+            <div class="budget-cat-left">🛒 Shopping</div>
+            <div class="budget-cat-right" style="color:var(--power-pink);">₹4,800 / ₹4,000</div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill pink" style="width:100%;"></div>
+          </div>
+          <div class="over-budget-label">⚠ Over budget by ₹800</div>
+        </div>
+
+        <!-- Bills -->
+        <div class="budget-cat-card">
+          <div class="budget-cat-top">
+            <div class="budget-cat-left">⚡ Bills</div>
+            <div class="budget-cat-right">₹1,800 / ₹3,000</div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill blue" style="width:60%;"></div>
+          </div>
+        </div>
+
+        <!-- Transport -->
+        <div class="budget-cat-card">
+          <div class="budget-cat-top">
+            <div class="budget-cat-left">🚕 Transport</div>
+            <div class="budget-cat-right">₹900 / ₹2,000</div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width:45%;"></div>
+          </div>
+        </div>
+
+        <!-- Bottom Nav -->
+        <div class="bottom-nav">
+          <div class="nav-item active">🏠 Home</div>
+          <div class="nav-item">
+            <div class="nav-icon">👛</div>
+            <div>Wallets</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">📊</div>
+            <div>Reports</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">👤</div>
+            <div>Profile</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 6 — RECURRING
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">06 — Recurring</div>
+    <div class="phone-frame">
+      <div class="screen" style="padding-bottom:100px;">
+
+        <div class="s3-header">
+          <div class="screen-title">Recurring</div>
+          <button class="pill-btn small">+ Add</button>
+        </div>
+
+        <div class="period-pills">
+          <div class="period-pill inactive">All</div>
+          <div class="period-pill active">Upcoming</div>
+          <div class="period-pill inactive">Pending</div>
+          <div class="period-pill inactive">Auto-deduct</div>
+        </div>
+
+        <div class="section-label">Due Soon</div>
+
+        <!-- Netflix -->
+        <div class="recurring-card">
+          <div class="rc-icon">📺</div>
+          <div class="rc-info">
+            <div class="rc-name">Netflix</div>
+            <div class="rc-sub">Monthly · HDFC Credit</div>
+            <div class="rc-due">Due Jan 1</div>
+          </div>
+          <div class="rc-right">
+            <div class="rc-amount">₹649</div>
+            <button class="rc-mark-btn">Mark Paid</button>
+          </div>
+        </div>
+
+        <!-- Internet -->
+        <div class="recurring-card">
+          <div class="rc-icon">🌐</div>
+          <div class="rc-info">
+            <div class="rc-name">Internet</div>
+            <div class="rc-sub">Monthly · PhonePe</div>
+            <div class="rc-due">Due Jan 3</div>
+          </div>
+          <div class="rc-right">
+            <div class="rc-amount">₹799</div>
+            <button class="rc-mark-btn">Mark Paid</button>
+          </div>
+        </div>
+
+        <!-- iCloud -->
+        <div class="recurring-card">
+          <div class="rc-icon">☁️</div>
+          <div class="rc-info">
+            <div class="rc-name">iCloud</div>
+            <div class="rc-sub">Monthly · GPay</div>
+            <div class="rc-due">Due Jan 5</div>
+          </div>
+          <div class="rc-right">
+            <div class="rc-amount">₹75</div>
+            <span class="rc-auto-badge">AUTO</span>
+          </div>
+        </div>
+
+        <div class="section-label" style="color:var(--power-pink);">Overdue</div>
+
+        <!-- Electricity — Overdue -->
+        <div class="recurring-card overdue">
+          <div class="rc-icon">⚡</div>
+          <div class="rc-info">
+            <div class="rc-name">Electricity</div>
+            <div class="rc-sub">Monthly · Cash</div>
+            <div class="rc-due pink">Due Dec 28</div>
+          </div>
+          <div class="rc-right">
+            <div class="rc-amount">₹1,200</div>
+            <button class="rc-mark-btn">Mark Paid</button>
+          </div>
+        </div>
+
+        <!-- Bottom Nav -->
+        <div class="bottom-nav">
+          <div class="nav-item active">🏠 Home</div>
+          <div class="nav-item">
+            <div class="nav-icon">👛</div>
+            <div>Wallets</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">📊</div>
+            <div>Reports</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">👤</div>
+            <div>Profile</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 7 — REPORTS
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">07 — Reports</div>
+    <div class="phone-frame">
+      <div class="screen" style="padding-bottom:100px;">
+
+        <div class="s3-header">
+          <div class="screen-title">Reports</div>
+          <button class="pill-btn ghost small">Export ↓</button>
+        </div>
+
+        <div class="period-pills">
+          <div class="period-pill inactive">Week</div>
+          <div class="period-pill active">Month</div>
+          <div class="period-pill inactive">Custom</div>
+        </div>
+
+        <!-- Reports Summary Card -->
+        <div class="reports-summary-card">
+          <div class="rsc-label">Total Spent</div>
+          <div class="rsc-amount">₹12,450</div>
+          <div class="rsc-row">
+            <div class="rsc-stat" style="color:var(--lime-pop);">+₹28,000 Income</div>
+            <div class="rsc-stat" style="color:var(--power-pink);">−₹12,450 Expenses</div>
+          </div>
+        </div>
+
+        <!-- Spending Trend Chart -->
+        <div class="chart-card">
+          <div class="chart-title">Spending Trend</div>
+          <svg class="line-chart" viewBox="0 0 320 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- Grid lines -->
+            <line x1="0" y1="20" x2="320" y2="20" stroke="#e6e4e4" stroke-width="1"/>
+            <line x1="0" y1="50" x2="320" y2="50" stroke="#e6e4e4" stroke-width="1"/>
+            <line x1="0" y1="80" x2="320" y2="80" stroke="#e6e4e4" stroke-width="1"/>
+            <!-- Data points: Mon-Sun: 800, 1200, 450, 2100, 340, 649, 1200 -->
+            <!-- Normalize to 100px height, max ~2200 -->
+            <!-- y = 90 - (val/2200)*80 -->
+            <!-- Mon(0,800)→y=61 Tue(1,1200)→y=46 Wed(2,450)→y=74 Thu(3,2100)→y=14 Fri(4,340)→y=78 Sat(5,649)→y=66 Sun(6,1200)→y=46 -->
+            <!-- x spread: 0..320 with 6 steps = 53.3 each; x = 16 + i*48 -->
+            <polyline
+              points="16,61 69,46 122,74 175,14 228,78 281,66 316,46"
+              stroke="#02bbff"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
+            <!-- Area fill -->
+            <polygon
+              points="16,61 69,46 122,74 175,14 228,78 281,66 316,46 316,90 16,90"
+              fill="rgba(2,187,255,0.08)"
+            />
+            <!-- Data dots -->
+            <circle cx="16" cy="61" r="4" fill="#02bbff"/>
+            <circle cx="69" cy="46" r="4" fill="#02bbff"/>
+            <circle cx="122" cy="74" r="4" fill="#02bbff"/>
+            <circle cx="175" cy="14" r="4" fill="#02bbff"/>
+            <circle cx="228" cy="78" r="4" fill="#02bbff"/>
+            <circle cx="281" cy="66" r="4" fill="#02bbff"/>
+            <circle cx="316" cy="46" r="4" fill="#02bbff"/>
+            <!-- Value labels -->
+            <text x="16" y="54" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">800</text>
+            <text x="69" y="39" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">1.2k</text>
+            <text x="122" y="67" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">450</text>
+            <text x="175" y="8" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">2.1k</text>
+            <text x="228" y="71" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">340</text>
+            <text x="281" y="59" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">649</text>
+            <text x="316" y="39" font-size="8" fill="#6e6e6e" text-anchor="middle" font-family="Inter">1.2k</text>
+          </svg>
+          <div class="chart-axis-labels">
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Mon</span>
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Tue</span>
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Wed</span>
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Thu</span>
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Fri</span>
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Sat</span>
+            <span class="chart-axis-label" style="color:var(--muted-stone);">Sun</span>
+          </div>
+        </div>
+
+        <!-- Category breakdown -->
+        <div class="chart-card">
+          <div class="chart-title">By Category</div>
+          <div class="cat-bars-section">
+            <div class="cat-bar-row">
+              <div class="cat-bar-label">🍔 Food</div>
+              <div class="cat-bar-track">
+                <div class="cat-bar-fill" style="width:64%;"></div>
+              </div>
+              <div class="cat-bar-amount">₹3.2k</div>
+            </div>
+            <div class="cat-bar-row">
+              <div class="cat-bar-label">🛒 Shopping</div>
+              <div class="cat-bar-track">
+                <div class="cat-bar-fill pink" style="width:96%;"></div>
+              </div>
+              <div class="cat-bar-amount">₹4.8k</div>
+            </div>
+            <div class="cat-bar-row">
+              <div class="cat-bar-label">⚡ Bills</div>
+              <div class="cat-bar-track">
+                <div class="cat-bar-fill" style="width:60%;"></div>
+              </div>
+              <div class="cat-bar-amount">₹1.8k</div>
+            </div>
+            <div class="cat-bar-row">
+              <div class="cat-bar-label">🚕 Transport</div>
+              <div class="cat-bar-track">
+                <div class="cat-bar-fill" style="width:45%;"></div>
+              </div>
+              <div class="cat-bar-amount">₹900</div>
+            </div>
+            <div class="cat-bar-row">
+              <div class="cat-bar-label">💊 Health</div>
+              <div class="cat-bar-track">
+                <div class="cat-bar-fill" style="width:27%;"></div>
+              </div>
+              <div class="cat-bar-amount">₹680</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bottom Nav -->
+        <div class="bottom-nav">
+          <div class="nav-item">
+            <div class="nav-icon">🏠</div>
+            <div>Home</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">👛</div>
+            <div>Wallets</div>
+          </div>
+          <div class="nav-item active">📊 Reports</div>
+          <div class="nav-item">
+            <div class="nav-icon">👤</div>
+            <div>Profile</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════
+       FRAME 8 — PROFILE
+  ══════════════════════════════════════════════════ -->
+  <div class="frame-wrapper">
+    <div class="frame-label">08 — Profile</div>
+    <div class="phone-frame">
+      <div class="screen" style="padding-bottom:100px;">
+
+        <div class="screen-title" style="margin-bottom:20px;">Profile</div>
+
+        <!-- User Card -->
+        <div class="profile-user-card">
+          <div class="avatar">AL</div>
+          <div class="profile-user-info">
+            <div class="profile-name">Ali</div>
+            <div class="profile-email">ali@example.com</div>
+          </div>
+          <div class="pencil-icon">✏️</div>
+        </div>
+
+        <!-- PREFERENCES -->
+        <div class="settings-section-label">PREFERENCES</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-left">Currency</div>
+            <div class="settings-row-right">₹ INR <span class="chevron">›</span></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-left">Default Wallet
+            </div>
+            <div class="settings-row-right">
+              <div class="lime-dot"></div>
+              Cash <span class="chevron">›</span>
+            </div>
+          </div>
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-left">Notifications</div>
+            <div class="settings-row-right">
+              <div class="toggle" style="width:36px; height:22px;"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CATEGORIES -->
+        <div class="settings-section-label">CATEGORIES</div>
+        <div class="settings-card">
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-left">Manage Categories</div>
+            <div class="settings-row-right">8 categories <span class="chevron">›</span></div>
+          </div>
+        </div>
+
+        <!-- DATA -->
+        <div class="settings-section-label">DATA</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-left">Export All Data</div>
+            <div class="settings-row-right"><span class="chevron">›</span></div>
+          </div>
+          <div class="settings-row">
+            <div class="settings-row-left">Import Data</div>
+            <div class="settings-row-right"><span class="chevron">›</span></div>
+          </div>
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-left pink">Clear All Data</div>
+            <div class="settings-row-right"><span class="chevron" style="color:var(--power-pink);">›</span></div>
+          </div>
+        </div>
+
+        <!-- ACCOUNT -->
+        <div class="settings-section-label">ACCOUNT</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="settings-row-left">Change Password</div>
+            <div class="settings-row-right"><span class="chevron">›</span></div>
+          </div>
+          <div class="settings-row" style="border-bottom:none;">
+            <div class="settings-row-left pink" style="font-weight:500; font-size:16px;">Sign Out</div>
+            <div class="settings-row-right"><span class="chevron" style="color:var(--power-pink);">›</span></div>
+          </div>
+        </div>
+
+        <!-- Bottom Nav -->
+        <div class="bottom-nav">
+          <div class="nav-item">
+            <div class="nav-icon">🏠</div>
+            <div>Home</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">👛</div>
+            <div>Wallets</div>
+          </div>
+          <div class="nav-item">
+            <div class="nav-icon">📊</div>
+            <div>Reports</div>
+          </div>
+          <div class="nav-item active">👤 Profile</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- end frames-row -->
+
+</body>
+</html>

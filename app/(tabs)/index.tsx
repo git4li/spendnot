@@ -61,11 +61,13 @@ function ExpenseRow({ expense, walletMap }: { expense: Expense; walletMap: Recor
   const isToday = date.toDateString() === now.toDateString();
   const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
   const isYesterday = date.toDateString() === yesterday.toDateString();
+  
+  const timeStr = date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
   const dateStr = isToday
-    ? `Today, ${date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+    ? `Today, ${timeStr}`
     : isYesterday
-    ? 'Yesterday'
-    : date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+    ? `Yesterday, ${timeStr}`
+    : `${date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${timeStr}`;
 
   const sourceWalletName = walletMap[expense.walletId] ?? 'Wallet';
   const displayWalletName = expense.type === 'transfer'
@@ -92,6 +94,9 @@ function ExpenseRow({ expense, walletMap }: { expense: Expense; walletMap: Recor
       </View>
       <View style={styles.expenseInfo}>
         <Text style={styles.expenseCat}>{cat.label}</Text>
+        {expense.note ? (
+          <Text style={styles.expenseNote} numberOfLines={1}>{expense.note}</Text>
+        ) : null}
         <Text style={styles.expenseWallet}>{displayWalletName}</Text>
       </View>
       <View style={styles.expenseRight}>
@@ -542,6 +547,12 @@ const styles = StyleSheet.create({
     ...Typography.bodyBold,
     fontSize: FontSize.base,
     color: Colors.carbonBlack,
+  },
+  expenseNote: {
+    ...Typography.body,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+    marginTop: 1,
   },
   expenseWallet: {
     ...Typography.body,

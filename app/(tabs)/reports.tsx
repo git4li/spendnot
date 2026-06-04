@@ -299,7 +299,19 @@ export default function ReportsScreen() {
                 const displayWalletName = e.type === 'transfer'
                   ? `${sourceWalletName} ➔ ${walletMap[e.toWalletId ?? ''] ?? 'Wallet'}`
                   : sourceWalletName;
-                const dateStr = e.date.toDate().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+                
+                const d = e.date.toDate();
+                const now = new Date();
+                const isToday = d.toDateString() === now.toDateString();
+                const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
+                const isYesterday = d.toDateString() === yesterday.toDateString();
+                
+                const timeStr = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+                const dateStr = isToday
+                  ? `Today, ${timeStr}`
+                  : isYesterday
+                  ? `Yesterday, ${timeStr}`
+                  : `${d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}, ${timeStr}`;
 
                 const sign = e.type === 'income' ? '+' : e.type === 'transfer' ? '⇄ ' : '−';
                 const amountColor = e.type === 'income'
@@ -322,6 +334,9 @@ export default function ReportsScreen() {
                     </View>
                     <View style={styles.entryInfo}>
                       <Text style={styles.entryCat}>{cat.label}</Text>
+                      {e.note ? (
+                        <Text style={styles.entryNote} numberOfLines={1}>{e.note}</Text>
+                      ) : null}
                       <Text style={styles.entryWallet}>{displayWalletName}</Text>
                     </View>
                     <View style={styles.entryRight}>
@@ -457,6 +472,12 @@ const styles = StyleSheet.create({
     ...Typography.bodyBold,
     fontSize: FontSize.base,
     color: Colors.carbonBlack,
+  },
+  entryNote: {
+    ...Typography.body,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+    marginTop: 1,
   },
   entryWallet: {
     ...Typography.body,
