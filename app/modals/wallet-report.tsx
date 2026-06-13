@@ -386,6 +386,9 @@ export default function WalletReportModal() {
                     <View style={styles.txInfo}>
                       <Text style={styles.txCat}>{displayCatLabel}</Text>
                       {e.note ? <Text style={styles.txNote}>{e.note}</Text> : null}
+                      {e.photoUri ? (
+                        <Text style={{ fontSize: 12, color: Colors.mutedStone, marginTop: 2 }}>📎 Image attached</Text>
+                      ) : null}
                       <Text style={styles.txDate}>{formatDate(e.date)}</Text>
                     </View>
                     <Text style={[

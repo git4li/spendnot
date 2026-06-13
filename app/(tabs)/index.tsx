@@ -97,6 +97,9 @@ function ExpenseRow({ expense, walletMap }: { expense: Expense; walletMap: Recor
         {expense.note ? (
           <Text style={styles.expenseNote} numberOfLines={1}>{expense.note}</Text>
         ) : null}
+        {expense.photoUri ? (
+          <Text style={{ fontSize: 12, color: Colors.mutedStone, marginTop: 2 }}>📎 Image attached</Text>
+        ) : null}
         <Text style={styles.expenseWallet}>{displayWalletName}</Text>
       </View>
       <View style={styles.expenseRight}>

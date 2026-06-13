@@ -42,6 +42,7 @@ export interface Expense {
   category: CategoryKey;
   amount: number;
   note?: string;
+  photoUri?: string | null;
   date: Timestamp;
   isRecurring: boolean;
   recurringId?: string;

@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Dimensions, Alert,
+  StyleSheet, ActivityIndicator, Dimensions, Alert, Modal, TouchableWithoutFeedback,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -21,7 +21,7 @@ const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - Spacing.lg * 2 - 32;
 const CHART_H = 120;
 
-type Period = 'week' | 'month' | 'custom';
+type Period = 'today' | 'week' | 'month' | 'custom';
 
 // ── Category Donut Chart ──────────────────────
 function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: string; emoji: string; spent: number }> }) {
@@ -139,6 +139,23 @@ export default function ReportsScreen() {
   const { expenses, loading } = useExpenses(500);
   const { wallets } = useWallets();
 
+  // Custom date selection filter
+  const [customFilterDate, setCustomFilterDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  const [pickerYear, setPickerYear] = useState(customFilterDate.getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(customFilterDate.getMonth());
+  const [pickerDay, setPickerDay] = useState(customFilterDate.getDate());
+
+  // Sync date picker states when opened
+  useEffect(() => {
+    if (showDatePicker) {
+      setPickerYear(customFilterDate.getFullYear());
+      setPickerMonth(customFilterDate.getMonth());
+      setPickerDay(customFilterDate.getDate());
+    }
+  }, [showDatePicker, customFilterDate]);
+
   const walletMap = useMemo(() => {
     const map: Record<string, string> = {};
     wallets.forEach((w) => {
@@ -148,28 +165,49 @@ export default function ReportsScreen() {
   }, [wallets]);
 
   const now = new Date();
+  
+  const isSameDay = (d1: Date, d2: Date) => {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  };
+
   const filtered = useMemo(() => {
+    if (period === 'today') {
+      return expenses.filter((e) => isSameDay(e.date.toDate(), now) && e.type === 'expense');
+    }
     if (period === 'week') {
       const start = new Date(now); start.setDate(now.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
       return expenses.filter((e) => e.date.toDate() >= start && e.type === 'expense');
     }
+    if (period === 'custom') {
+      return expenses.filter((e) => isSameDay(e.date.toDate(), customFilterDate) && e.type === 'expense');
+    }
+    // Month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return expenses.filter((e) => e.date.toDate() >= start && e.type === 'expense');
-  }, [expenses, period]);
+  }, [expenses, period, customFilterDate]);
 
   const income = useMemo(() => {
+    if (period === 'today') {
+      return expenses.filter((e) => isSameDay(e.date.toDate(), now) && e.type === 'income');
+    }
     if (period === 'week') {
       const start = new Date(now); start.setDate(now.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
       return expenses.filter((e) => e.date.toDate() >= start && e.type === 'income');
     }
+    if (period === 'custom') {
+      return expenses.filter((e) => isSameDay(e.date.toDate(), customFilterDate) && e.type === 'income');
+    }
+    // Month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return expenses.filter((e) => e.date.toDate() >= start && e.type === 'income');
-  }, [expenses, period]);
+  }, [expenses, period, customFilterDate]);
 
   const totalSpent = filtered.reduce((s, e) => s + e.amount, 0);
   const totalIncome = income.reduce((s, e) => s + e.amount, 0);
-
-
 
   // Category breakdown
   const catSpend: Record<string, number> = {};
@@ -198,13 +236,70 @@ export default function ReportsScreen() {
 
   // All entries (not just expenses)
   const allFiltered = useMemo(() => {
+    if (period === 'today') {
+      return expenses.filter((e) => isSameDay(e.date.toDate(), now));
+    }
     if (period === 'week') {
       const start = new Date(now); start.setDate(now.getDate() - 6);
+      start.setHours(0, 0, 0, 0);
       return expenses.filter((e) => e.date.toDate() >= start);
     }
+    if (period === 'custom') {
+      return expenses.filter((e) => isSameDay(e.date.toDate(), customFilterDate));
+    }
+    // Month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return expenses.filter((e) => e.date.toDate() >= start);
-  }, [expenses, period]);
+  }, [expenses, period, customFilterDate]);
+
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
+
+  const generateCalendarDays = (year: number, month: number) => {
+    const daysInMonth = getDaysInMonth(year, month);
+    const firstDay = getFirstDayOfMonth(year, month);
+    const days: (number | null)[] = [];
+    for (let i = 0; i < firstDay; i++) {
+      days.push(null);
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(i);
+    }
+    return days;
+  };
+
+  const calendarDays = useMemo(() => {
+    return generateCalendarDays(pickerYear, pickerMonth);
+  }, [pickerYear, pickerMonth]);
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const handlePrevMonth = () => {
+    if (pickerMonth === 0) {
+      setPickerMonth(11);
+      setPickerYear(y => y - 1);
+    } else {
+      setPickerMonth(m => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (pickerMonth === 11) {
+      setPickerMonth(0);
+      setPickerYear(y => y + 1);
+    } else {
+      setPickerMonth(m => m + 1);
+    }
+  };
+
+  const handleConfirmDatePicker = () => {
+    const newD = new Date(pickerYear, pickerMonth, pickerDay);
+    setCustomFilterDate(newD);
+    setShowDatePicker(false);
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
@@ -218,7 +313,7 @@ export default function ReportsScreen() {
 
       {/* Period filter */}
       <View style={styles.periodRow}>
-        {(['week', 'month'] as Period[]).map((p) => (
+        {(['today', 'week', 'month', 'custom'] as Period[]).map((p) => (
           <TouchableOpacity
             key={p}
             style={[styles.periodPill, period === p && styles.periodPillActive]}
@@ -230,6 +325,19 @@ export default function ReportsScreen() {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* Custom Date Selection Row */}
+      {period === 'custom' && (
+        <TouchableOpacity 
+          style={styles.customDateSelectRow} 
+          onPress={() => setShowDatePicker(true)}
+        >
+          <Text style={styles.customDateSelectLabel}>Selected Date:</Text>
+          <Text style={styles.customDateSelectValue}>
+            {customFilterDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} 📅
+          </Text>
+        </TouchableOpacity>
+      )}
 
       {loading ? (
         <ActivityIndicator color={Colors.carbonBlack} style={{ marginTop: 60 }} />
@@ -248,8 +356,6 @@ export default function ReportsScreen() {
               </Text>
             </View>
           </View>
-
-
 
           {/* Category breakdown */}
           {catRows.length > 0 && (
@@ -337,6 +443,9 @@ export default function ReportsScreen() {
                       {e.note ? (
                         <Text style={styles.entryNote} numberOfLines={1}>{e.note}</Text>
                       ) : null}
+                      {e.photoUri ? (
+                        <Text style={{ fontSize: 12, color: Colors.mutedStone, marginTop: 2 }}>📎 Image attached</Text>
+                      ) : null}
                       <Text style={styles.entryWallet}>{displayWalletName}</Text>
                     </View>
                     <View style={styles.entryRight}>
@@ -352,6 +461,64 @@ export default function ReportsScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* Reusable Date Picker Modal (No time select needed for reports filtering) */}
+      <Modal visible={showDatePicker} transparent animationType="fade">
+        <TouchableWithoutFeedback onPress={() => setShowDatePicker(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Select Date</Text>
+
+                <View style={styles.pickerHeader}>
+                  <TouchableOpacity onPress={handlePrevMonth}>
+                    <Text style={styles.pickerArrow}>◀</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.pickerMonthTitle}>
+                    {monthNames[pickerMonth]} {pickerYear}
+                  </Text>
+                  <TouchableOpacity onPress={handleNextMonth}>
+                    <Text style={styles.pickerArrow}>▶</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.weekdaysRow}>
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
+                    <Text key={i} style={styles.weekdayText}>{day}</Text>
+                  ))}
+                </View>
+
+                <View style={styles.daysGrid}>
+                  {calendarDays.map((day, idx) => {
+                    const isSelected = day === pickerDay;
+                    return (
+                      <TouchableOpacity
+                        key={idx}
+                        style={[styles.dayCell, isSelected && styles.dayCellSelected]}
+                        disabled={day === null}
+                        onPress={() => day && setPickerDay(day)}
+                      >
+                        <Text style={[styles.dayCellText, isSelected && styles.dayCellTextSelected, !day && { color: 'transparent' }]}>
+                          {day}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalAddBtn} onPress={handleConfirmDatePicker}>
+                    <Text style={styles.modalAddText}>Confirm</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -394,6 +561,29 @@ const styles = StyleSheet.create({
   periodPillActive: { backgroundColor: Colors.carbonBlack },
   periodPillText: { ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.mutedStone },
   periodPillTextActive: { color: Colors.polarWhite },
+  
+  customDateSelectRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.polarWhite,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.ghostGray,
+    marginBottom: Spacing.base,
+  },
+  customDateSelectLabel: {
+    ...Typography.bodyMedium,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+  },
+  customDateSelectValue: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: Colors.carbonBlack,
+  },
+
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 100 },
   summaryCard: {
     backgroundColor: Colors.carbonBlack,
@@ -533,4 +723,94 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     textTransform: 'uppercase',
   },
+
+  // Picker modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl,
+  },
+  modalCard: {
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius['2xl'],
+    padding: Spacing.xl,
+    width: '100%',
+    maxWidth: 380,
+    gap: Spacing.base,
+  },
+  modalTitle: { ...Typography.bodyBold, fontSize: FontSize.xl, color: Colors.carbonBlack },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  pickerArrow: {
+    fontSize: 18,
+    color: Colors.mutedStone,
+    paddingHorizontal: Spacing.sm,
+  },
+  pickerMonthTitle: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.md,
+    color: Colors.carbonBlack,
+  },
+  weekdaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: Spacing.xs,
+  },
+  weekdayText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.xs,
+    color: Colors.mutedStone,
+    width: 32,
+    textAlign: 'center',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginBottom: Spacing.md,
+  },
+  dayCell: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: Radius.full,
+    marginVertical: 2,
+  },
+  dayCellSelected: {
+    backgroundColor: '#FF3B30',
+  },
+  dayCellText: {
+    ...Typography.bodyMedium,
+    fontSize: FontSize.sm,
+    color: Colors.carbonBlack,
+  },
+  dayCellTextSelected: {
+    color: '#ffffff',
+    fontWeight: 'bold',
+  },
+  modalActions: { flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm },
+  modalCancelBtn: {
+    flex: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 12,
+    backgroundColor: Colors.ghostGray,
+    alignItems: 'center',
+  },
+  modalCancelText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.mutedStone },
+  modalAddBtn: {
+    flex: 1,
+    borderRadius: Radius.full,
+    paddingVertical: 12,
+    backgroundColor: Colors.carbonBlack,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalAddText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
 });
