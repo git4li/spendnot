@@ -6,7 +6,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, Alert, ActivityIndicator,
-  Keyboard, TouchableWithoutFeedback, Modal, Platform,
+  Keyboard, TouchableWithoutFeedback, Modal, Platform, Image,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -19,7 +19,7 @@ import { useWallets } from '../../hooks/useWallets';
 import { useExpenses } from '../../hooks/useExpenses';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  CATEGORIES, getCategoryDef, WalletColors, CategoryDef,
+  CATEGORIES, getCategoryDef, WalletColors, CategoryDef, getWalletColors,
 } from '../../constants/theme';
 import { TransactionType } from '../../types/models';
 import * as Haptics from 'expo-haptics';
@@ -583,19 +583,36 @@ export default function EditExpenseModal() {
             contentContainerStyle={[styles.pillRow, { marginBottom: 0 }]}
             style={{ marginBottom: Spacing.base, maxHeight: 50, flexGrow: 0 }}
           >
-            {(['expense', 'income', 'savings', 'transfer'] as TransactionType[]).map((t) => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.pill, type === t && styles.pillActive, { minWidth: 105, marginRight: Spacing.xs }]}
-                onPress={() => { setType(t); Haptics.selectionAsync(); }}
-                activeOpacity={0.8}
-              >
-                {type === t && <Text style={styles.pillTick}>✓ </Text>}
-                <Text style={[styles.pillText, type === t && styles.pillTextActive]}>
-                  {t === 'transfer' ? 'Transfer' : t.charAt(0).toUpperCase() + t.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {(['expense', 'income', 'savings', 'transfer'] as TransactionType[]).map((t) => {
+              const isActive = type === t;
+              let activeBg: string = Colors.carbonBlack;
+              if (isActive) {
+                if (t === 'expense') activeBg = Colors.expense;
+                else if (t === 'income') activeBg = Colors.income;
+                else if (t === 'savings') activeBg = Colors.savings;
+                else activeBg = Colors.periwinkle;
+              }
+              return (
+                <TouchableOpacity
+                  key={t}
+                  style={[
+                    styles.pill,
+                    isActive && { backgroundColor: activeBg },
+                    { minWidth: 105, marginRight: Spacing.xs }
+                  ]}
+                  onPress={() => { setType(t); Haptics.selectionAsync(); }}
+                  activeOpacity={0.8}
+                >
+                  {isActive && <Text style={[styles.pillTick, { color: Colors.carbonBlack }]}>✓ </Text>}
+                  <Text style={[
+                    styles.pillText,
+                    isActive && { color: Colors.carbonBlack }
+                  ]}>
+                    {t === 'transfer' ? 'Transfer' : t.charAt(0).toUpperCase() + t.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -620,13 +637,28 @@ export default function EditExpenseModal() {
                 >
                   {filteredCategories.map((c) => {
                     const selected = category === c.key;
+                    let selectedBg = '#EFEFEF';
+                    if (selected) {
+                      if (type === 'expense') selectedBg = Colors.expense;
+                      else if (type === 'income') selectedBg = Colors.income;
+                      else if (type === 'savings') selectedBg = Colors.savings;
+                      else selectedBg = Colors.periwinkle;
+                    }
                     return (
                       <TouchableOpacity
                         key={c.key}
                         style={styles.catGridItem}
                         onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
                       >
-                        <View style={[styles.catCircle, selected && styles.catCircleSelected]}>
+                        <View style={[
+                          styles.catCircle, 
+                          selected && {
+                            backgroundColor: selectedBg,
+                            borderColor: Colors.carbonBlack,
+                            borderWidth: 2,
+                            transform: [{ scale: 1.08 }]
+                          }
+                        ]}>
                           <Text style={styles.catEmojiText}>{c.emoji}</Text>
                         </View>
                         <Text style={[styles.catGridLabel, selected && styles.catGridLabelActive]} numberOfLines={1}>
@@ -651,19 +683,43 @@ export default function EditExpenseModal() {
             )}
 
             {/* Wallet selector */}
-            <Text style={styles.fieldLabel}>{type === 'transfer' ? 'From wallet' : 'Wallet'}</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.walletPillsRow}>
+            <Text style={styles.fieldLabel}>Wallet</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.walletPillsRow}
+            >
               {wallets.map((w) => {
-                const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                const wColors = getWalletColors(w.type, w.bankName);
                 const selected = walletId === w.id;
                 return (
                   <TouchableOpacity
                     key={w.id}
-                    style={[styles.walletPill, { backgroundColor: wColors.bg }, selected && styles.walletPillSelected]}
+                    style={[
+                      styles.walletCard,
+                      { backgroundColor: wColors.bg },
+                      selected && {
+                        borderColor: Colors.carbonBlack,
+                        borderWidth: 2.5,
+                        transform: [{ scale: 1.05 }],
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.15,
+                        shadowRadius: 6,
+                        elevation: 3,
+                      }
+                    ]}
                     onPress={() => { setWalletId(w.id); Haptics.selectionAsync(); }}
                   >
-                    {selected && <Text style={[styles.walletTick, { color: wColors.text }]}>✓ </Text>}
-                    <Text style={[styles.walletPillText, { color: wColors.text }]}>{w.name}</Text>
+                    <View style={styles.walletCardHeader}>
+                      <Text style={[styles.walletCardName, { color: wColors.text }]} numberOfLines={1}>
+                        {w.name.toUpperCase()}
+                      </Text>
+                      {selected && <Text style={{ color: wColors.text, fontSize: 10 }}>✓</Text>}
+                    </View>
+                    <Text style={[styles.walletCardBalance, { color: wColors.text }]}>
+                      ₹{w.balance.toLocaleString('en-IN')}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -672,20 +728,44 @@ export default function EditExpenseModal() {
             {type === 'transfer' && (
               <>
                 <Text style={styles.fieldLabel}>To wallet</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.walletPillsRow}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.walletPillsRow}
+                >
                   {wallets.map((w) => {
-                    const wColors = WalletColors[w.type] ?? { bg: Colors.ghostGray, text: Colors.carbonBlack };
+                    const wColors = getWalletColors(w.type, w.bankName);
                     const selected = toWalletId === w.id;
                     const isSource = walletId === w.id;
                     if (isSource) return null;
                     return (
                       <TouchableOpacity
                         key={w.id}
-                        style={[styles.walletPill, { backgroundColor: wColors.bg }, selected && styles.walletPillSelected]}
+                        style={[
+                          styles.walletCard,
+                          { backgroundColor: wColors.bg },
+                          selected && {
+                            borderColor: Colors.carbonBlack,
+                            borderWidth: 2.5,
+                            transform: [{ scale: 1.05 }],
+                            shadowColor: '#000',
+                            shadowOffset: { width: 0, height: 4 },
+                            shadowOpacity: 0.15,
+                            shadowRadius: 6,
+                            elevation: 3,
+                          }
+                        ]}
                         onPress={() => { setToWalletId(w.id); Haptics.selectionAsync(); }}
                       >
-                        {selected && <Text style={[styles.walletTick, { color: wColors.text }]}>✓ </Text>}
-                        <Text style={[styles.walletPillText, { color: wColors.text }]}>{w.name}</Text>
+                        <View style={styles.walletCardHeader}>
+                          <Text style={[styles.walletCardName, { color: wColors.text }]} numberOfLines={1}>
+                            {w.name.toUpperCase()}
+                          </Text>
+                          {selected && <Text style={{ color: wColors.text, fontSize: 10 }}>✓</Text>}
+                        </View>
+                        <Text style={[styles.walletCardBalance, { color: wColors.text }]}>
+                          ₹{w.balance.toLocaleString('en-IN')}
+                        </Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -726,21 +806,28 @@ export default function EditExpenseModal() {
 
             {/* Thumbnail/Attached Note & Photo Previews */}
             {photoUri && (
-              <View style={styles.photoPreviewRow}>
-                <Text style={styles.photoAttachedText}>📷 Photo attached ✓</Text>
-                <TouchableOpacity onPress={() => setPhotoUri(null)}>
-                  <Text style={styles.removePhotoText}>Remove</Text>
-                </TouchableOpacity>
+              <View style={styles.thumbnailContainer}>
+                <View style={styles.thumbnailWrapper}>
+                  <Image source={{ uri: photoUri }} style={styles.thumbnailImage} />
+                  <TouchableOpacity 
+                    style={styles.thumbnailDeleteBadge} 
+                    onPress={() => setPhotoUri(null)}
+                  >
+                    <Text style={styles.thumbnailDeleteText}>×</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.thumbnailLabel}>Receipt Photo Attached</Text>
               </View>
             )}
 
             {note.trim().length > 0 && (
-              <View style={styles.notePreviewRow}>
-                <Text style={styles.notePreviewText} numberOfLines={1}>
-                  📝 {note}
+              <View style={styles.noteBubble}>
+                <Text style={styles.noteBubbleEmoji}>💬</Text>
+                <Text style={styles.noteBubbleText} numberOfLines={2}>
+                  {note}
                 </Text>
-                <TouchableOpacity onPress={() => setNote('')}>
-                  <Text style={styles.removePhotoText}>Clear</Text>
+                <TouchableOpacity onPress={() => setNote('')} style={styles.noteBubbleClose}>
+                  <Text style={styles.noteBubbleCloseText}>×</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -802,13 +889,27 @@ export default function EditExpenseModal() {
                 <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('backspace')}>
                   <Text style={styles.keyText}>⌫</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.submitKeyBtn]} onPress={() => handleKeyInput('submit')}>
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
-                  ) : (
-                    <Text style={styles.submitKeyText}>✓</Text>
-                  )}
-                </TouchableOpacity>
+                {(() => {
+                  const submitBg = type === 'expense'
+                    ? Colors.expense
+                    : type === 'income'
+                    ? Colors.income
+                    : type === 'savings'
+                    ? Colors.savings
+                    : Colors.periwinkle;
+                  return (
+                    <TouchableOpacity 
+                      style={[styles.keyBtn, { backgroundColor: submitBg }]} 
+                      onPress={() => handleKeyInput('submit')}
+                    >
+                      {saving ? (
+                        <ActivityIndicator size="small" color={Colors.carbonBlack} />
+                      ) : (
+                        <Text style={[styles.submitKeyText, { color: Colors.carbonBlack }]}>✓</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })()}
               </View>
             </View>
 
@@ -1178,16 +1279,23 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 96,
     borderRadius: Radius.lg,
-    backgroundColor: '#2A2A2A', // Deep gray box matching image 2
+    backgroundColor: '#121212', // Premium deep dark box
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.base,
     justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.08)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 4,
   },
   amountCurrencySymbol: {
+    fontFamily: 'Montserrat_900Black',
     fontSize: FontSize['4xl'],
     color: '#ffffff',
-    fontWeight: 'bold',
     marginRight: Spacing.xs,
   },
   amountExprScroll: {
@@ -1196,54 +1304,117 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   amountExprText: {
-    ...Typography.heading,
+    fontFamily: 'Montserrat_900Black',
     fontSize: FontSize['6xl'],
     color: '#ffffff',
     textAlign: 'right',
   },
-  photoPreviewRow: {
+  // Wallet mini cards
+  walletCard: {
+    width: 130,
+    height: 68,
+    borderRadius: Radius.md,
+    padding: Spacing.sm,
+    justifyContent: 'space-between',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    marginRight: Spacing.sm,
+  },
+  walletCardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: 8,
-    marginBottom: Spacing.base,
   },
-  photoAttachedText: {
+  walletCardName: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9,
+    letterSpacing: 0.5,
+    opacity: 0.8,
+  },
+  walletCardBalance: {
+    fontFamily: 'Montserrat_900Black',
+    fontSize: FontSize.base,
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  // Attached media/notes previews
+  thumbnailContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: '#F5F5F7',
+    borderRadius: Radius.md,
+    padding: Spacing.xs,
+    marginBottom: Spacing.base,
+    borderWidth: 1.5,
+    borderColor: Colors.ghostGray,
+  },
+  thumbnailWrapper: {
+    position: 'relative',
+    width: 48,
+    height: 48,
+  },
+  thumbnailImage: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.sm,
+  },
+  thumbnailDeleteBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: Colors.danger,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  thumbnailDeleteText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    lineHeight: 14,
+  },
+  thumbnailLabel: {
     ...Typography.bodyMedium,
     fontSize: FontSize.sm,
     color: Colors.mutedStone,
   },
-  notePreviewRow: {
+  noteBubble: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: 8,
+    backgroundColor: '#F5F5F7',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 10,
     marginBottom: Spacing.base,
+    borderWidth: 1.5,
+    borderColor: Colors.ghostGray,
+    gap: Spacing.xs,
   },
-  notePreviewText: {
+  noteBubbleEmoji: {
+    fontSize: 14,
+  },
+  noteBubbleText: {
     ...Typography.bodyMedium,
     fontSize: FontSize.sm,
-    color: Colors.mutedStone,
+    color: Colors.carbonBlack,
     flex: 1,
-    marginRight: Spacing.base,
   },
-  removePhotoText: {
-    ...Typography.bodyBold,
-    fontSize: FontSize.sm,
-    color: Colors.danger,
+  noteBubbleClose: {
+    paddingHorizontal: Spacing.xs,
   },
-
+  noteBubbleCloseText: {
+    fontSize: 18,
+    color: Colors.mutedStone,
+    fontWeight: 'bold',
+  },
   // Custom keyboard
   keyboardContainer: {
     gap: Spacing.sm,
     marginBottom: Spacing.base,
-    backgroundColor: '#EFEFEF', // Light gray background area for keyboard layout
+    backgroundColor: '#F2F2F7', // Modern light iOS system gray area
     borderRadius: Radius.lg,
     padding: Spacing.sm,
   },
@@ -1254,42 +1425,42 @@ const styles = StyleSheet.create({
   keyBtn: {
     flex: 1,
     height: 52,
-    borderRadius: Radius.sm,
+    borderRadius: Radius.md,
     backgroundColor: '#FFFFFF', // Solid light key background for high contrast
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: Colors.carbonBlack,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1.5 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2.5,
+    elevation: 1.5,
   },
   keyText: {
-    ...Typography.bodyBold,
+    fontFamily: 'Montserrat_900Black',
     fontSize: FontSize.xl,
     color: Colors.carbonBlack,
   },
   opKeyBtn: {
-    backgroundColor: '#E5E5E5',
+    backgroundColor: '#E5E5EA',
   },
   dateKeyBtn: {
-    backgroundColor: '#E5E5E5',
+    backgroundColor: '#E5E5EA',
     paddingVertical: 2,
   },
   dateKeyText: {
-    ...Typography.bodyMedium,
-    fontSize: FontSize.xs,
+    ...Typography.bodyBold,
+    fontSize: 10,
     color: Colors.carbonBlack,
     textAlign: 'center',
-    lineHeight: 13,
+    lineHeight: 12,
   },
   submitKeyBtn: {
     backgroundColor: '#1A1A1A',
   },
   submitKeyText: {
-    ...Typography.bodyBold,
+    fontFamily: 'Montserrat_900Black',
     fontSize: FontSize.xl,
-    color: '#ffffff',
+    color: Colors.carbonBlack,
   },
 
   // Custom picker styles
