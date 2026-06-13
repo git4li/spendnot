@@ -580,35 +580,45 @@ export default function EditExpenseModal() {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={[styles.pillRow, { marginBottom: 0 }]}
+            contentContainerStyle={styles.segmentedControlRow}
             style={{ marginBottom: Spacing.base, maxHeight: 50, flexGrow: 0 }}
           >
             {(['expense', 'income', 'savings', 'transfer'] as TransactionType[]).map((t) => {
               const isActive = type === t;
-              let activeBg: string = Colors.carbonBlack;
+              let activeBg: string = Colors.ghostGray;
+              let activeText: string = Colors.mutedStone;
+              
               if (isActive) {
-                if (t === 'expense') activeBg = Colors.expense;
-                else if (t === 'income') activeBg = Colors.income;
-                else if (t === 'savings') activeBg = Colors.savings;
-                else activeBg = Colors.periwinkle;
+                if (t === 'expense') {
+                  activeBg = Colors.expense;
+                  activeText = Colors.expenseText;
+                } else if (t === 'income') {
+                  activeBg = Colors.income;
+                  activeText = Colors.incomeText;
+                } else if (t === 'savings') {
+                  activeBg = Colors.savings;
+                  activeText = Colors.savingsText;
+                } else {
+                  activeBg = Colors.periwinkle;
+                  activeText = Colors.mutedStone;
+                }
               }
+
               return (
                 <TouchableOpacity
                   key={t}
                   style={[
-                    styles.pill,
-                    isActive && { backgroundColor: activeBg },
-                    { minWidth: 105, marginRight: Spacing.xs }
+                    styles.segmentedTab,
+                    isActive ? { backgroundColor: activeBg } : { backgroundColor: '#F0F0F2' }
                   ]}
                   onPress={() => { setType(t); Haptics.selectionAsync(); }}
                   activeOpacity={0.8}
                 >
-                  {isActive && <Text style={[styles.pillTick, { color: Colors.carbonBlack }]}>✓ </Text>}
                   <Text style={[
-                    styles.pillText,
-                    isActive && { color: Colors.carbonBlack }
+                    styles.segmentedTabText,
+                    { color: isActive ? activeText : Colors.mutedStone }
                   ]}>
-                    {t === 'transfer' ? 'Transfer' : t.charAt(0).toUpperCase() + t.slice(1)}
+                    {isActive ? '✓ ' : ''}{t === 'transfer' ? 'Transfer' : t.charAt(0).toUpperCase() + t.slice(1)}
                   </Text>
                 </TouchableOpacity>
               );
@@ -617,77 +627,74 @@ export default function EditExpenseModal() {
 
           <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             
-            {/* Circular Category Grid with Search */}
+            {/* Circular Category Row Scroll */}
             {type !== 'transfer' && (
-              <>
-                <View style={styles.searchContainer}>
-                  <TextInput
-                    style={styles.searchInput}
-                    placeholder="🔍 Search category..."
-                    placeholderTextColor={Colors.mutedStone}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                  />
-                </View>
-                <ScrollView 
-                  style={styles.catGridScroll} 
-                  contentContainerStyle={styles.catGridContent}
-                  showsVerticalScrollIndicator={false}
-                  nestedScrollEnabled
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.catHorizontalScrollContent}
+                style={styles.catHorizontalScroll}
+              >
+                {filteredCategories.map((c) => {
+                  const selected = category === c.key;
+                  let activeThemeColor: string = Colors.expense;
+                  if (type === 'income') activeThemeColor = Colors.income;
+                  else if (type === 'savings') activeThemeColor = Colors.savings;
+                  
+                  return (
+                    <TouchableOpacity
+                      key={c.key}
+                      style={styles.catItem}
+                      onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[
+                        styles.catCircle,
+                        selected ? {
+                          backgroundColor: '#ffffff',
+                          borderColor: activeThemeColor,
+                          borderWidth: 2.5,
+                          shadowColor: activeThemeColor,
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.15,
+                          shadowRadius: 4,
+                          elevation: 2,
+                        } : {
+                          backgroundColor: '#F5F5F7',
+                          borderColor: 'transparent',
+                          borderWidth: 2.5,
+                        }
+                      ]}>
+                        <Text style={styles.catEmoji}>{c.emoji}</Text>
+                      </View>
+                      <Text style={[
+                        styles.catLabel,
+                        selected && { color: Colors.carbonBlack, fontFamily: 'Inter_700Bold' }
+                      ]}>
+                        {c.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity
+                  style={styles.catItem}
+                  onPress={() => setShowAddCat(true)}
+                  activeOpacity={0.8}
                 >
-                  {filteredCategories.map((c) => {
-                    const selected = category === c.key;
-                    let selectedBg = '#EFEFEF';
-                    if (selected) {
-                      if (type === 'expense') selectedBg = Colors.expense;
-                      else if (type === 'income') selectedBg = Colors.income;
-                      else if (type === 'savings') selectedBg = Colors.savings;
-                      else selectedBg = Colors.periwinkle;
-                    }
-                    return (
-                      <TouchableOpacity
-                        key={c.key}
-                        style={styles.catGridItem}
-                        onPress={() => { setCategory(c.key); Haptics.selectionAsync(); }}
-                      >
-                        <View style={[
-                          styles.catCircle, 
-                          selected && {
-                            backgroundColor: selectedBg,
-                            borderColor: Colors.carbonBlack,
-                            borderWidth: 2,
-                            transform: [{ scale: 1.08 }]
-                          }
-                        ]}>
-                          <Text style={styles.catEmojiText}>{c.emoji}</Text>
-                        </View>
-                        <Text style={[styles.catGridLabel, selected && styles.catGridLabelActive]} numberOfLines={1}>
-                          {c.label}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                  <TouchableOpacity
-                    style={styles.catGridItem}
-                    onPress={() => setShowAddCat(true)}
-                  >
-                    <View style={[styles.catCircle, styles.catCircleAdd]}>
-                      <Text style={styles.catAddPlusText}>+</Text>
-                    </View>
-                    <Text style={styles.catGridLabel} numberOfLines={1}>
-                      New
-                    </Text>
-                  </TouchableOpacity>
-                </ScrollView>
-              </>
+                  <View style={[styles.catCircle, styles.catCircleAdd]}>
+                    <Text style={styles.catAddPlus}>+</Text>
+                  </View>
+                  <Text style={styles.catLabel}>New</Text>
+                </TouchableOpacity>
+              </ScrollView>
             )}
 
-            {/* Wallet selector */}
-            <Text style={styles.fieldLabel}>Wallet</Text>
+            {/* Wallet selector scroll row */}
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.walletPillsRow}
+              contentContainerStyle={styles.walletScrollContent}
+              style={styles.walletScroll}
             >
               {wallets.map((w) => {
                 const wColors = getWalletColors(w.type, w.bankName);
@@ -696,29 +703,21 @@ export default function EditExpenseModal() {
                   <TouchableOpacity
                     key={w.id}
                     style={[
-                      styles.walletCard,
-                      { backgroundColor: wColors.bg },
-                      selected && {
-                        borderColor: Colors.carbonBlack,
-                        borderWidth: 2.5,
-                        transform: [{ scale: 1.05 }],
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.15,
-                        shadowRadius: 6,
-                        elevation: 3,
+                      styles.walletPill,
+                      selected ? {
+                        backgroundColor: Colors.carbonBlack,
+                      } : {
+                        backgroundColor: wColors.bg,
                       }
                     ]}
                     onPress={() => { setWalletId(w.id); Haptics.selectionAsync(); }}
+                    activeOpacity={0.8}
                   >
-                    <View style={styles.walletCardHeader}>
-                      <Text style={[styles.walletCardName, { color: wColors.text }]} numberOfLines={1}>
-                        {w.name.toUpperCase()}
-                      </Text>
-                      {selected && <Text style={{ color: wColors.text, fontSize: 10 }}>✓</Text>}
-                    </View>
-                    <Text style={[styles.walletCardBalance, { color: wColors.text }]}>
-                      ₹{w.balance.toLocaleString('en-IN')}
+                    <Text style={[
+                      styles.walletText,
+                      selected ? { color: '#ffffff' } : { color: wColors.text }
+                    ]}>
+                      {w.name.toUpperCase()}{selected ? '  ✓' : ''}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -731,7 +730,8 @@ export default function EditExpenseModal() {
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.walletPillsRow}
+                  contentContainerStyle={styles.walletScrollContent}
+                  style={styles.walletScroll}
                 >
                   {wallets.map((w) => {
                     const wColors = getWalletColors(w.type, w.bankName);
@@ -742,29 +742,21 @@ export default function EditExpenseModal() {
                       <TouchableOpacity
                         key={w.id}
                         style={[
-                          styles.walletCard,
-                          { backgroundColor: wColors.bg },
-                          selected && {
-                            borderColor: Colors.carbonBlack,
-                            borderWidth: 2.5,
-                            transform: [{ scale: 1.05 }],
-                            shadowColor: '#000',
-                            shadowOffset: { width: 0, height: 4 },
-                            shadowOpacity: 0.15,
-                            shadowRadius: 6,
-                            elevation: 3,
+                          styles.walletPill,
+                          selected ? {
+                            backgroundColor: Colors.carbonBlack,
+                          } : {
+                            backgroundColor: wColors.bg,
                           }
                         ]}
                         onPress={() => { setToWalletId(w.id); Haptics.selectionAsync(); }}
+                        activeOpacity={0.8}
                       >
-                        <View style={styles.walletCardHeader}>
-                          <Text style={[styles.walletCardName, { color: wColors.text }]} numberOfLines={1}>
-                            {w.name.toUpperCase()}
-                          </Text>
-                          {selected && <Text style={{ color: wColors.text, fontSize: 10 }}>✓</Text>}
-                        </View>
-                        <Text style={[styles.walletCardBalance, { color: wColors.text }]}>
-                          ₹{w.balance.toLocaleString('en-IN')}
+                        <Text style={[
+                          styles.walletText,
+                          selected ? { color: '#ffffff' } : { color: wColors.text }
+                        ]}>
+                          {w.name.toUpperCase()}{selected ? '  ✓' : ''}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -779,14 +771,16 @@ export default function EditExpenseModal() {
                 <TouchableOpacity 
                   style={[styles.mediaBtn, note.trim().length > 0 && styles.mediaBtnActive]} 
                   onPress={() => setShowNoteModal(true)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.mediaBtnText}>💬</Text>
+                  <Text style={[styles.mediaBtnText, note.trim().length > 0 && { color: '#ffffff' }]}>💬</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                   style={[styles.mediaBtn, photoUri !== null && styles.mediaBtnActive]} 
                   onPress={handleSelectPhoto}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.mediaBtnText}>📷</Text>
+                  <Text style={[styles.mediaBtnText, photoUri !== null && { color: '#ffffff' }]}>📷</Text>
                 </TouchableOpacity>
               </View>
 
@@ -835,77 +829,83 @@ export default function EditExpenseModal() {
             {/* Custom Keyboard grid */}
             <View style={styles.keyboardContainer}>
               <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('1')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('1')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>1</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('2')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('2')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>2</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('3')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('3')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>3</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.dateKeyBtn]} onPress={() => setShowDatePicker(true)}>
+                <TouchableOpacity style={[styles.keyBtn, styles.dateKeyBtn]} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
                   <Text style={styles.dateKeyText}>{formatKeyboardDateTime(selectedDate)}</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('4')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('4')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>4</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('5')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('5')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>5</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('6')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('6')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>6</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('+')}>
+                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('+')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>+</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('7')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('7')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>7</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('8')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('8')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>8</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('9')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('9')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>9</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('-')}>
+                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('-')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>−</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('.')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('.')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>.</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('0')}>
+                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('0')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>0</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('backspace')}>
+                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('backspace')} activeOpacity={0.7}>
                   <Text style={styles.keyText}>⌫</Text>
                 </TouchableOpacity>
                 {(() => {
-                  const submitBg = type === 'expense'
-                    ? Colors.expense
-                    : type === 'income'
-                    ? Colors.income
-                    : type === 'savings'
-                    ? Colors.savings
-                    : Colors.periwinkle;
+                  let submitBg: string = Colors.expense;
+                  let submitTextCol: string = Colors.expenseText;
+                  if (type === 'income') {
+                    submitBg = Colors.income;
+                    submitTextCol = Colors.incomeText;
+                  } else if (type === 'savings') {
+                    submitBg = Colors.savings;
+                    submitTextCol = Colors.savingsText;
+                  } else if (type === 'transfer') {
+                    submitBg = Colors.periwinkle;
+                    submitTextCol = Colors.mutedStone;
+                  }
                   return (
                     <TouchableOpacity 
                       style={[styles.keyBtn, { backgroundColor: submitBg }]} 
                       onPress={() => handleKeyInput('submit')}
+                      activeOpacity={0.7}
                     >
                       {saving ? (
-                        <ActivityIndicator size="small" color={Colors.carbonBlack} />
+                        <ActivityIndicator size="small" color={submitTextCol} />
                       ) : (
-                        <Text style={[styles.submitKeyText, { color: Colors.carbonBlack }]}>✓</Text>
+                        <Text style={[styles.submitKeyText, { color: submitTextCol }]}>✓</Text>
                       )}
                     </TouchableOpacity>
                   );
@@ -913,7 +913,7 @@ export default function EditExpenseModal() {
               </View>
             </View>
 
-            {/* Recurring */}
+            {/* Recurring selector */}
             <Text style={styles.fieldLabel}>Frequency</Text>
             <View style={styles.pillRow}>
               {[false, true].map((val) => (
@@ -1168,59 +1168,74 @@ const styles = StyleSheet.create({
     ...Typography.bodyBold, fontSize: FontSize.base,
     color: Colors.carbonBlack, marginBottom: Spacing.sm, marginTop: Spacing.xs,
   },
-  // Wallet
-  walletPillsRow: { gap: Spacing.sm, marginBottom: Spacing.lg },
-  walletPill: {
-    flexDirection: 'row', alignItems: 'center',
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.base, paddingVertical: 9,
-    borderWidth: 2, borderColor: 'transparent',
-  },
-  walletPillSelected: { borderColor: Colors.carbonBlack },
-  walletTick: { ...Typography.bodyBold, fontSize: FontSize.sm },
-  walletPillText: { ...Typography.bodyBold, fontSize: FontSize.sm },
 
-  // Circular Category grid & search styles
-  searchContainer: {
-    marginBottom: Spacing.sm,
-  },
-  searchInput: {
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: 8,
-    ...Typography.bodyMedium,
-    fontSize: FontSize.sm,
-    color: Colors.carbonBlack,
-  },
-  catGridScroll: {
-    maxHeight: 180,
-    marginBottom: Spacing.md,
-  },
-  catGridContent: {
+  // Segmented Control
+  segmentedControlRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 0,
-    rowGap: Spacing.md,
+    gap: 8,
+    paddingHorizontal: 4,
   },
-  catGridItem: {
-    width: '25%',
+  segmentedTab: {
+    borderRadius: Radius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.xs,
+  },
+  segmentedTabText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+  },
+
+  // Wallet Selector Row
+  walletScroll: {
+    marginBottom: Spacing.base,
+    maxHeight: 46,
+    flexGrow: 0,
+  },
+  walletScrollContent: {
+    paddingHorizontal: 4,
+    gap: 8,
+    alignItems: 'center',
+  },
+  walletPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: Radius.full,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  walletText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 12,
+    letterSpacing: 0.5,
+  },
+
+  // Circular Category Row Scroll
+  catHorizontalScroll: {
+    marginBottom: Spacing.base,
+    maxHeight: 92,
+    flexGrow: 0,
+  },
+  catHorizontalScrollContent: {
+    paddingHorizontal: 4,
+    gap: 12,
+    alignItems: 'center',
+  },
+  catItem: {
+    alignItems: 'center',
+    gap: 6,
+    width: 68,
   },
   catCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#EFEFEF',
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: '#F5F5F7',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2.5,
     borderColor: 'transparent',
-  },
-  catCircleSelected: {
-    borderColor: '#FF3B30', // Red selection border
   },
   catCircleAdd: {
     backgroundColor: 'transparent',
@@ -1228,22 +1243,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.mutedStone,
     borderStyle: 'dashed',
   },
-  catEmojiText: {
-    fontSize: 22,
+  catEmoji: {
+    fontSize: 24,
   },
-  catAddPlusText: {
-    fontSize: 22,
+  catAddPlus: {
+    fontSize: 24,
     color: Colors.mutedStone,
   },
-  catGridLabel: {
-    ...Typography.bodyMedium,
+  catLabel: {
+    fontFamily: 'Inter_500Medium',
     fontSize: 11,
     color: Colors.mutedStone,
     textAlign: 'center',
-  },
-  catGridLabelActive: {
-    color: Colors.carbonBlack,
-    fontWeight: 'bold',
   },
 
   // Amount panel & note/photo row
@@ -1279,7 +1290,7 @@ const styles = StyleSheet.create({
     flex: 1,
     height: 96,
     borderRadius: Radius.lg,
-    backgroundColor: '#121212', // Premium deep dark box
+    backgroundColor: '#000000', // Pure black card as requested
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.base,
