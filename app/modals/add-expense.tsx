@@ -679,11 +679,11 @@ export default function AddExpenseModal() {
                   <Text style={[styles.mediaBtnText, note.trim().length > 0 && { color: '#ffffff' }]}>💬</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.mediaBtn, photoUri !== null && styles.mediaBtnActive]} 
-                  onPress={handleSelectPhoto}
+                  style={[styles.mediaBtn, isRecurring && styles.mediaBtnActive]} 
+                  onPress={() => { setIsRecurring(!isRecurring); Haptics.selectionAsync(); }}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.mediaBtnText, photoUri !== null && { color: '#ffffff' }]}>📷</Text>
+                  <Text style={[styles.mediaBtnText, isRecurring && { color: '#ffffff' }]}>🔁</Text>
                 </TouchableOpacity>
               </View>
 
@@ -701,21 +701,7 @@ export default function AddExpenseModal() {
               </View>
             </View>
 
-            {/* Thumbnail/Attached Note & Photo Previews */}
-            {photoUri && (
-              <View style={styles.thumbnailContainer}>
-                <View style={styles.thumbnailWrapper}>
-                  <Image source={{ uri: photoUri }} style={styles.thumbnailImage} />
-                  <TouchableOpacity 
-                    style={styles.thumbnailDeleteBadge} 
-                    onPress={() => setPhotoUri(null)}
-                  >
-                    <Text style={styles.thumbnailDeleteText}>×</Text>
-                  </TouchableOpacity>
-                </View>
-                <Text style={styles.thumbnailLabel}>Receipt Photo Attached</Text>
-              </View>
-            )}
+
 
             {note.trim().length > 0 && (
               <View style={styles.noteBubble}>
@@ -816,22 +802,7 @@ export default function AddExpenseModal() {
               </View>
             </View>
 
-            {/* Recurring selector */}
-            <Text style={styles.fieldLabel}>Frequency</Text>
-            <View style={styles.pillRow}>
-              {[false, true].map((val) => (
-                <TouchableOpacity
-                  key={val ? 'recurring' : 'one-time'}
-                  style={[styles.pill, isRecurring === val && styles.pillActive]}
-                  onPress={() => { setIsRecurring(val); Haptics.selectionAsync(); }}
-                >
-                  {isRecurring === val && <Text style={styles.pillTick}>✓ </Text>}
-                  <Text style={[styles.pillText, isRecurring === val && styles.pillTextActive]}>
-                    {val ? '🔁 Recurring' : '1️⃣ One-time'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+
           </ScrollView>
         </View>
       </KeyboardDismissWrapper>
