@@ -19,7 +19,7 @@ import { useWallets } from '../../hooks/useWallets';
 import { useExpenses } from '../../hooks/useExpenses';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  CATEGORIES, getCategoryDef, WalletColors, CategoryDef, getWalletColors,
+  CATEGORIES, getCategoryDef, WalletColors, CategoryDef, getWalletColors, getCurrencySymbol,
 } from '../../constants/theme';
 import { TransactionType } from '../../types/models';
 import * as Haptics from 'expo-haptics';
@@ -127,7 +127,8 @@ export default function EditExpenseModal() {
     }
   }, [type, walletId, toWalletId, wallets]);
 
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
 
   // Load custom categories from Firestore
   useEffect(() => {
@@ -785,7 +786,7 @@ export default function EditExpenseModal() {
               </View>
 
               <View style={styles.amountBox}>
-                <Text style={styles.amountCurrencySymbol}>₹</Text>
+                <Text style={styles.amountCurrencySymbol}>{currencySymbol}</Text>
                 <ScrollView 
                   horizontal 
                   showsHorizontalScrollIndicator={false}

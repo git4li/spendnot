@@ -181,3 +181,14 @@ export const getCategoryDef = (key: string): CategoryDef => {
   }
   return CATEGORIES[CATEGORIES.length - 1];
 };
+
+export const CURRENCY_SYMBOLS: Record<string, string> = {
+  INR: '₹',
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+};
+
+export const getCurrencySymbol = (currencyCode?: string) => {
+  return CURRENCY_SYMBOLS[currencyCode ?? 'INR'] ?? '₹';
+};

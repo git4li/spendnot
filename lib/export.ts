@@ -4,7 +4,8 @@
 // ─────────────────────────────────────────────
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import XLSX from 'xlsx';
+import * as XLSX from 'xlsx';
+import { Platform } from 'react-native';
 import { Expense, Wallet, Budget } from '../types/models';
 import { getCategoryDef } from '../constants/theme';
 
@@ -46,9 +47,31 @@ export async function exportToExcel(
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(budgetRows), 'Budgets');
   }
 
-  // Write to cache directory (SDK 52 legacy FileSystem API)
-  const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
   const date = new Date().toISOString().slice(0, 10);
+
+  // Web download fallback handler
+  if (Platform.OS === 'web') {
+    const wbout = XLSX.write(wb, { type: 'binary', bookType: 'xlsx' });
+    const s2ab = (s: string) => {
+      const buf = new ArrayBuffer(s.length);
+      const view = new Uint8Array(buf);
+      for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xff;
+      return buf;
+    };
+    const blob = new Blob([s2ab(wbout)], { type: 'application/octet-stream' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `spendnot_export_${date}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    return;
+  }
+
+  // Native share handler
+  const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
   const fileUri = `${FileSystem.cacheDirectory}spendnot_export_${date}.xlsx`;
 
   await FileSystem.writeAsStringAsync(fileUri, wbout, {

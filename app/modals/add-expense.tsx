@@ -19,7 +19,7 @@ import { useWallets } from '../../hooks/useWallets';
 import { useExpenses } from '../../hooks/useExpenses';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  CATEGORIES, CategoryDef, WalletColors, getWalletColors,
+  CATEGORIES, CategoryDef, WalletColors, getWalletColors, getCurrencySymbol,
 } from '../../constants/theme';
 import { TransactionType } from '../../types/models';
 import * as Haptics from 'expo-haptics';
@@ -50,7 +50,8 @@ export default function AddExpenseModal() {
   const { wallets } = useWallets();
   const { bottom } = useSafeAreaInsets();
   const { expenses } = useExpenses(100); // Load last 100 transactions for frequency sorting
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
 
   const KeyboardDismissWrapper = Platform.OS === 'web' ? React.Fragment : TouchableWithoutFeedback;
   const dismissProps = Platform.OS === 'web' ? {} : { onPress: Keyboard.dismiss };
@@ -380,7 +381,7 @@ export default function AddExpenseModal() {
       Toast.show({
         type: 'success',
         text1: `${label} saved ✓`,
-        text2: `₹${finalAmount.toLocaleString('en-IN')}`,
+        text2: `${currencySymbol}${finalAmount.toLocaleString('en-IN')}`,
       });
       if (router.canGoBack()) {
         router.back();
@@ -688,7 +689,7 @@ export default function AddExpenseModal() {
               </View>
 
               <View style={styles.amountBox}>
-                <Text style={styles.amountCurrencySymbol}>₹</Text>
+                <Text style={styles.amountCurrencySymbol}>{currencySymbol}</Text>
                 <ScrollView 
                   horizontal 
                   showsHorizontalScrollIndicator={false}

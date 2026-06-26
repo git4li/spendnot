@@ -20,7 +20,7 @@ import { useExpenses, useMonthlyExpenses } from '../../hooks/useExpenses';
 import { useEmis } from '../../hooks/useEmis';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  getCategoryDef, getWalletColors,
+  getCategoryDef, getWalletColors, getCurrencySymbol,
 } from '../../constants/theme';
 import { Wallet, Expense } from '../../types/models';
 import { doc, updateDoc, increment, collection, addDoc, Timestamp } from 'firebase/firestore';
@@ -30,6 +30,8 @@ import * as Haptics from 'expo-haptics';
 
 // ── Wallet Mini Card ─────────────────────────
 function WalletMiniCard({ wallet, onPress }: { wallet: Wallet; onPress: () => void }) {
+  const { profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
   const colors = getWalletColors(wallet.type, wallet.bankName);
   return (
     <TouchableOpacity
@@ -41,7 +43,7 @@ function WalletMiniCard({ wallet, onPress }: { wallet: Wallet; onPress: () => vo
         {wallet.name}
       </Text>
       <Text style={[styles.walletMiniAmount, { color: colors.text }]}>
-        ₹{wallet.balance.toLocaleString('en-IN')}
+        {currencySymbol}{wallet.balance.toLocaleString('en-IN')}
       </Text>
       {wallet.isDefault && (
         <View style={styles.defaultBadge}>
@@ -55,6 +57,8 @@ function WalletMiniCard({ wallet, onPress }: { wallet: Wallet; onPress: () => vo
 
 // ── Expense Row ──────────────────────────────
 function ExpenseRow({ expense, walletMap }: { expense: Expense; walletMap: Record<string, string> }) {
+  const { profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
   const cat = getCategoryDef(expense.category);
   const date = expense.date.toDate();
   const now = new Date();
@@ -104,7 +108,7 @@ function ExpenseRow({ expense, walletMap }: { expense: Expense; walletMap: Recor
       </View>
       <View style={styles.expenseRight}>
         <Text style={[styles.expenseAmount, { color: amountColor }]}>
-          {sign}₹{expense.amount.toLocaleString('en-IN')}
+          {sign}{currencySymbol}{expense.amount.toLocaleString('en-IN')}
         </Text>
         <Text style={styles.expenseTime}>{dateStr}</Text>
       </View>
@@ -125,7 +129,8 @@ function EmptyExpenses() {
 
 // ── Dashboard ────────────────────────────────
 export default function DashboardScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
   const { wallets, loading: walletsLoading } = useWallets();
   const { expenses, loading: expensesLoading } = useExpenses(10);
   const { totalSpent, totalIncome, totalSavings } = useMonthlyExpenses();
@@ -259,7 +264,7 @@ export default function DashboardScreen() {
                     <View style={styles.notifTextContainer}>
                       <Text style={styles.notifTitle}>{emi.name} EMI</Text>
                       <Text style={styles.notifDescription}>
-                        ₹{emi.monthlyAmount.toLocaleString('en-IN')} due via {walletMap[emi.walletId] ?? 'Wallet'}.
+                        {currencySymbol}{emi.monthlyAmount.toLocaleString('en-IN')} due via {walletMap[emi.walletId] ?? 'Wallet'}.
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -319,24 +324,24 @@ export default function DashboardScreen() {
         ) : null}
         <View style={[styles.summaryCard, walletsLoading && { display: 'none' }]}>
           <Text style={styles.summaryMonth}>This Month</Text>
-          <Text style={styles.summaryAmount}>₹{totalSpent.toLocaleString('en-IN')}</Text>
+          <Text style={styles.summaryAmount}>{currencySymbol}{totalSpent.toLocaleString('en-IN')}</Text>
           <View style={styles.summaryRow}>
             <View>
               <Text style={styles.summaryStatLabel}>Income</Text>
               <Text style={[styles.summaryStatVal, { color: Colors.income }]}>
-                ₹{totalIncome.toLocaleString('en-IN')}
+                {currencySymbol}{totalIncome.toLocaleString('en-IN')}
               </Text>
             </View>
             <View>
               <Text style={styles.summaryStatLabel}>Expenses</Text>
               <Text style={[styles.summaryStatVal, { color: Colors.expense }]}>
-                ₹{totalSpent.toLocaleString('en-IN')}
+                {currencySymbol}{totalSpent.toLocaleString('en-IN')}
               </Text>
             </View>
             <View>
               <Text style={styles.summaryStatLabel}>Savings</Text>
               <Text style={[styles.summaryStatVal, { color: Colors.savings }]}>
-                ₹{totalSavings.toLocaleString('en-IN')}
+                {currencySymbol}{totalSavings.toLocaleString('en-IN')}
               </Text>
             </View>
           </View>

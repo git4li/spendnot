@@ -20,6 +20,7 @@ import Toast from 'react-native-toast-message';
 import { exportToExcel } from '../../lib/export';
 import { useExpenses } from '../../hooks/useExpenses';
 import { confirmAction } from '../../lib/confirm';
+import { Wallet } from '../../types/models';
 
 function SectionLabel({ label }: { label: string }) {
   return (
@@ -58,7 +59,7 @@ function SettingsRow({
 }
 
 export default function ProfileScreen() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { wallets } = useWallets();
   const { expenses } = useExpenses(1000);
   const displayName = user?.displayName ?? 'User';
@@ -70,6 +71,66 @@ export default function ProfileScreen() {
     .slice(0, 2);
 
   const defaultWallet = wallets.find((w) => w.isDefault);
+
+  const currencyCode = profile?.currency ?? 'INR';
+  const currencyLabel = currencyCode === 'INR' ? '₹ INR' : currencyCode === 'USD' ? '$ USD' : currencyCode === 'EUR' ? '€ EUR' : '£ GBP';
+
+  const updateCurrency = async (curr: string) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { currency: curr });
+      Toast.show({ type: 'success', text1: 'Currency updated ✓', text2: `Set to ${curr}` });
+    } catch (e: any) {
+      Toast.show({ type: 'error', text1: 'Update failed', text2: e.message });
+    }
+  };
+
+  const handleCurrencyPress = () => {
+    Alert.alert(
+      'Select Currency',
+      'Choose your preferred currency:',
+      [
+        { text: '₹ INR', onPress: () => updateCurrency('INR') },
+        { text: '$ USD', onPress: () => updateCurrency('USD') },
+        { text: '€ EUR', onPress: () => updateCurrency('EUR') },
+        { text: '£ GBP', onPress: () => updateCurrency('GBP') },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
+
+  const updateDefaultWallet = async (w: Wallet) => {
+    if (!user) return;
+    try {
+      const batch = writeBatch(db);
+      wallets.forEach((wl) => {
+        batch.update(doc(db, 'wallets', wl.id), { isDefault: wl.id === w.id });
+      });
+      await batch.commit();
+      await updateDoc(doc(db, 'users', user.uid), { defaultWalletId: w.id });
+      Toast.show({ type: 'success', text1: 'Default wallet updated ✓', text2: `Set to ${w.name}` });
+    } catch (e: any) {
+      Toast.show({ type: 'error', text1: 'Update failed', text2: e.message });
+    }
+  };
+
+  const handleDefaultWalletPress = () => {
+    if (wallets.length === 0) {
+      Toast.show({ type: 'info', text1: 'No wallets', text2: 'Please create a wallet first.' });
+      return;
+    }
+    Alert.alert(
+      'Select Default Wallet',
+      'Choose the wallet to be used by default:',
+      [
+        ...wallets.map((w) => ({
+          text: w.name,
+          onPress: () => updateDefaultWallet(w),
+        })),
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
 
   const handleSignOut = () => {
     confirmAction(
@@ -187,11 +248,13 @@ export default function ProfileScreen() {
         <View style={styles.card}>
           <SettingsRow
             label="Currency"
-            right={<Text style={styles.rowValue}>₹ INR</Text>}
+            right={<Text style={styles.rowValue}>{currencyLabel}</Text>}
+            onPress={handleCurrencyPress}
           />
           <SettingsRow
             label="Default Wallet"
             right={<Text style={styles.rowValue}>{defaultWallet?.name ?? 'None'}</Text>}
+            onPress={handleDefaultWalletPress}
             isLast={true}
           />
         </View>

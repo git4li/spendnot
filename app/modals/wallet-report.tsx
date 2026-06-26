@@ -18,8 +18,9 @@ import Toast from 'react-native-toast-message';
 import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  getCategoryDef, getWalletColors,
+  getCategoryDef, getWalletColors, getCurrencySymbol,
 } from '../../constants/theme';
+import { useAuth } from '../../context/AuthContext';
 import { Expense } from '../../types/models';
 
 import { Timestamp } from 'firebase/firestore';
@@ -74,6 +75,8 @@ export default function WalletReportModal() {
   const { walletId } = useLocalSearchParams<{ walletId: string }>();
   const { wallets } = useWallets();
   const { bottom } = useSafeAreaInsets();
+  const { user, profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -88,10 +91,10 @@ export default function WalletReportModal() {
   const isLight = wallet?.type !== 'credit';
 
   useEffect(() => {
-    if (!walletId || !auth.currentUser) return;
+    if (!walletId || !user) return;
     const q = query(
       collection(db, 'expenses'),
-      where('uid', '==', auth.currentUser.uid),
+      where('uid', '==', user.uid),
       orderBy('date', 'desc'),
     );
     getDocs(q).then((snap) => {
@@ -137,7 +140,6 @@ export default function WalletReportModal() {
 
     setProcessingPayment(true);
     try {
-      const user = auth.currentUser;
       if (!user) {
         Toast.show({ type: 'error', text1: 'Not logged in', text2: 'Please log in again.' });
         return;
@@ -180,7 +182,7 @@ export default function WalletReportModal() {
         balance: increment(-amt),
       });
 
-      Toast.show({ type: 'success', text1: 'Bill Paid ✓', text2: `₹${amt.toLocaleString('en-IN')} applied.` });
+      Toast.show({ type: 'success', text1: 'Bill Paid ✓', text2: `${currencySymbol}${amt.toLocaleString('en-IN')} applied.` });
       setShowPayBill(false);
 
       // Refresh local transaction list
@@ -226,7 +228,7 @@ export default function WalletReportModal() {
         <View>
           <Text style={[styles.walletName, { color: colors.text }]}>{wallet?.name ?? 'Wallet'}</Text>
           <Text style={[styles.walletBalance, { color: colors.text }]}>
-            ₹{(wallet?.balance ?? 0).toLocaleString('en-IN')}
+            {currencySymbol}{(wallet?.balance ?? 0).toLocaleString('en-IN')}
           </Text>
           <Text style={[styles.walletBalanceLabel, { color: colors.text, opacity: 0.6 }]}>
             {wallet?.type === 'credit' ? 'Outstanding Owed' : 'Current balance'}
@@ -236,11 +238,11 @@ export default function WalletReportModal() {
         <View style={styles.monthRow}>
           <View style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}>
             <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>SPENT</Text>
-            <Text style={[styles.monthChipVal, { color: colors.text }]}>₹{totalSpent.toLocaleString('en-IN')}</Text>
+            <Text style={[styles.monthChipVal, { color: colors.text }]}>{currencySymbol}{totalSpent.toLocaleString('en-IN')}</Text>
           </View>
           <View style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}>
             <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>RECEIVED</Text>
-            <Text style={[styles.monthChipVal, { color: colors.text }]}>₹{totalReceived.toLocaleString('en-IN')}</Text>
+            <Text style={[styles.monthChipVal, { color: colors.text }]}>{currencySymbol}{totalReceived.toLocaleString('en-IN')}</Text>
           </View>
         </View>
       </View>
@@ -257,7 +259,7 @@ export default function WalletReportModal() {
             <View style={styles.creditLimitCard}>
               <View style={styles.limitHeader}>
                 <Text style={styles.limitTitle}>Monthly Usage Cap</Text>
-                <Text style={styles.limitValue}>₹{wallet.creditLimit.toLocaleString('en-IN')}</Text>
+                <Text style={styles.limitValue}>{currencySymbol}{wallet.creditLimit.toLocaleString('en-IN')}</Text>
               </View>
               
               <View style={styles.progressContainer}>
@@ -277,7 +279,7 @@ export default function WalletReportModal() {
                     {Math.round(Math.min((wallet.balance / wallet.creditLimit) * 100, 100))}% Utilized
                   </Text>
                   <Text style={styles.limitSubText}>
-                    ₹{Math.max(wallet.creditLimit - wallet.balance, 0).toLocaleString('en-IN')} Available
+                    {currencySymbol}{Math.max(wallet.creditLimit - wallet.balance, 0).toLocaleString('en-IN')} Available
                   </Text>
                 </View>
               </View>
@@ -339,7 +341,7 @@ export default function WalletReportModal() {
                     <View key={key} style={styles.catCard}>
                       <Text style={styles.catEmoji}>{cat.emoji}</Text>
                       <Text style={styles.catLabel}>{cat.label}</Text>
-                      <Text style={styles.catAmt}>₹{amt.toLocaleString('en-IN')}</Text>
+                      <Text style={styles.catAmt}>{currencySymbol}{amt.toLocaleString('en-IN')}</Text>
                       <View style={styles.catBarBg}>
                         <View style={[styles.catBar, { width: `${pct}%` }]} />
                       </View>
@@ -395,7 +397,7 @@ export default function WalletReportModal() {
                       styles.txAmt,
                       { color: amountColor },
                     ]}>
-                      {sign}₹{e.amount.toLocaleString('en-IN')}
+                      {sign}{currencySymbol}{e.amount.toLocaleString('en-IN')}
                     </Text>
                   </View>
                 );
@@ -412,7 +414,7 @@ export default function WalletReportModal() {
               <View style={styles.modalCard}>
                 <Text style={styles.modalTitle}>Pay Card Bill</Text>
                 
-                <Text style={styles.modalLabel}>AMOUNT TO PAY (₹)</Text>
+                <Text style={styles.modalLabel}>AMOUNT TO PAY ({currencySymbol})</Text>
                 <TextInput
                   style={styles.modalInput}
                   placeholder="0"

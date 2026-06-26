@@ -12,10 +12,11 @@ import { useExpenses } from '../../hooks/useExpenses';
 import { useWallets } from '../../hooks/useWallets';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  CATEGORIES, getCategoryDef, CategoryKey,
+  CATEGORIES, getCategoryDef, CategoryKey, getCurrencySymbol,
 } from '../../constants/theme';
 import { exportToExcel } from '../../lib/export';
 import Toast from 'react-native-toast-message';
+import { useAuth } from '../../context/AuthContext';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - Spacing.lg * 2 - 32;
@@ -25,7 +26,10 @@ type Period = 'today' | 'week' | 'month' | 'custom';
 
 // ── Category Donut Chart ──────────────────────
 function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: string; emoji: string; spent: number }> }) {
+  const { profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
   const total = useMemo(() => catRows.reduce((sum, c) => sum + c.spent, 0), [catRows]);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
   
   const segments = useMemo(() => {
     if (total === 0 || catRows.length === 0) return [];
@@ -64,6 +68,7 @@ function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: 
   }, [catRows, total]);
 
   const topSpender = catRows[0];
+  const activeCategory = catRows.find(c => c.key === (selectedKey ?? topSpender?.key)) ?? topSpender;
 
   const cx = 120;
   const cy = 120;
@@ -100,6 +105,7 @@ function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: 
                 stroke={seg.color}
                 strokeWidth={strokeWidth}
                 strokeLinecap="round"
+                onPress={() => setSelectedKey(seg.key)}
               />
               <Circle
                 cx={bubblePos.x}
@@ -108,12 +114,14 @@ function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: 
                 fill={Colors.polarWhite}
                 stroke={Colors.carbonBlack}
                 strokeWidth={1.5}
+                onPress={() => setSelectedKey(seg.key)}
               />
               <SvgText
                 x={bubblePos.x}
                 y={bubblePos.y + 4.5}
                 fontSize={13}
                 textAnchor="middle"
+                onPress={() => setSelectedKey(seg.key)}
               >
                 {seg.emoji}
               </SvgText>
@@ -122,12 +130,14 @@ function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: 
         })}
       </Svg>
       
-      {topSpender && (
+      {activeCategory && (
         <View style={styles.donutCenter}>
-          <Text style={styles.centerEmoji}>{topSpender.emoji}</Text>
-          <Text style={styles.centerLabel} numberOfLines={1}>{topSpender.label}</Text>
-          <Text style={styles.centerAmount}>₹{topSpender.spent.toLocaleString('en-IN')}</Text>
-          <Text style={styles.centerSub}>Top Spender</Text>
+          <Text style={styles.centerEmoji}>{activeCategory.emoji}</Text>
+          <Text style={styles.centerLabel} numberOfLines={1}>{activeCategory.label}</Text>
+          <Text style={styles.centerAmount}>{currencySymbol}{activeCategory.spent.toLocaleString('en-IN')}</Text>
+          <Text style={styles.centerSub}>
+            {activeCategory.key === topSpender?.key ? 'Top Spender' : 'Selected'}
+          </Text>
         </View>
       )}
     </View>
@@ -135,6 +145,8 @@ function CategoryDonutChart({ catRows }: { catRows: Array<{ key: string; label: 
 }
 
 export default function ReportsScreen() {
+  const { user, profile } = useAuth();
+  const currencySymbol = getCurrencySymbol(profile?.currency);
   const [period, setPeriod] = useState<Period>('month');
   const { expenses, loading } = useExpenses(500);
   const { wallets } = useWallets();
@@ -346,13 +358,13 @@ export default function ReportsScreen() {
           {/* Summary card */}
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total Spent</Text>
-            <Text style={styles.summaryAmount}>₹{totalSpent.toLocaleString('en-IN')}</Text>
+            <Text style={styles.summaryAmount}>{currencySymbol}{totalSpent.toLocaleString('en-IN')}</Text>
             <View style={styles.summaryRow}>
               <Text style={[styles.summaryBadge, { color: Colors.income }]}>
-                +₹{totalIncome.toLocaleString('en-IN')} Income
+                +{currencySymbol}{totalIncome.toLocaleString('en-IN')} Income
               </Text>
               <Text style={[styles.summaryBadge, { color: Colors.expense }]}>
-                −₹{totalSpent.toLocaleString('en-IN')} Expenses
+                −{currencySymbol}{totalSpent.toLocaleString('en-IN')} Expenses
               </Text>
             </View>
           </View>
@@ -381,7 +393,7 @@ export default function ReportsScreen() {
                       ]}
                     />
                   </View>
-                  <Text style={styles.catBarAmount}>₹{(c.spent / 1000).toFixed(1)}k</Text>
+                  <Text style={styles.catBarAmount}>{currencySymbol}{c.spent.toLocaleString('en-IN')}</Text>
                 </View>
               ))}
             </View>
@@ -430,10 +442,10 @@ export default function ReportsScreen() {
 
                 return (
                   <TouchableOpacity
-                    key={e.id}
-                    style={styles.entryRow}
-                    onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any)}
-                    activeOpacity={0.65}
+                     key={e.id}
+                     style={styles.entryRow}
+                     onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any)}
+                     activeOpacity={0.65}
                   >
                     <View style={styles.entryIcon}>
                       <Text style={{ fontSize: 18 }}>{cat.emoji}</Text>
@@ -450,7 +462,7 @@ export default function ReportsScreen() {
                     </View>
                     <View style={styles.entryRight}>
                       <Text style={[styles.entryAmount, { color: amountColor }]}>
-                        {sign}₹{e.amount.toLocaleString('en-IN')}
+                        {sign}{currencySymbol}{e.amount.toLocaleString('en-IN')}
                       </Text>
                       <Text style={styles.entryTime}>{dateStr}</Text>
                     </View>
@@ -634,7 +646,6 @@ const styles = StyleSheet.create({
     ...Typography.bodyBold,
     fontSize: FontSize.sm,
     color: Colors.carbonBlack,
-    width: 44,
     textAlign: 'right',
   },
   emptyBox: { alignItems: 'center', paddingVertical: Spacing['4xl'] },
