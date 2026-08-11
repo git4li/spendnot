@@ -13,6 +13,7 @@ export interface UserProfile {
   currency: 'INR';
   defaultWalletId: string | null;
   createdAt: Timestamp;
+  expectedIncome?: number;          // Expected monthly income for planning
 }
 
 // ── Wallet ────────────────────────────────────
@@ -28,6 +29,7 @@ export interface Wallet {
   creditLimit?: number;              // Custom usage cap / limit set by user
   billingCycleStartDay?: number;     // Day of month statement is generated (1-31)
   paymentDueDay?: number;            // Day of month payment is due (1-31)
+  lastBillAmount?: number;           // Manually set last CC bill amount (overrides calculated)
 }
 
 // ── Expense ───────────────────────────────────
@@ -59,6 +61,31 @@ export interface Budget {
   limit: number;
   period: BudgetPeriod;
   startDate: Timestamp;
+}
+
+// ── Checklist ─────────────────────────────────
+export interface ChecklistTemplate {
+  id: string;
+  uid: string;
+  name: string;
+  amount: number;
+  category: CategoryKey;
+  walletId: string;                 // Default source wallet
+  createdAt: Timestamp;
+}
+
+export interface ChecklistItem {
+  id: string;
+  uid: string;
+  month: string;                    // Format: "YYYY-MM"
+  name: string;
+  amount: number;
+  category: CategoryKey;
+  walletId: string;                 // Target source wallet
+  isPaid: boolean;
+  expenseId?: string | null;        // Link to logged transaction
+  paidAt?: Timestamp | null;
+  createdAt: Timestamp;
 }
 
 // ── Recurring ─────────────────────────────────

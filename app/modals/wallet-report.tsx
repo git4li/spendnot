@@ -68,7 +68,7 @@ const getCreditCycleInfo = (cycleStart: number, dueDay: number) => {
   const periodStr = `${start.toLocaleDateString('en-IN', options)} – ${end.toLocaleDateString('en-IN', options)}`;
   const dueStr = due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 
-  return { periodStr, dueStr, diffDays };
+  return { periodStr, dueStr, diffDays, start, end };
 };
 
 export default function WalletReportModal() {
@@ -85,6 +85,16 @@ export default function WalletReportModal() {
   const [sourceWalletId, setSourceWalletId] = useState('');
   const [payAmount, setPayAmount] = useState('');
   const [processingPayment, setProcessingPayment] = useState(false);
+
+  // Manual outstanding adjustment states
+  const [showSetOutstanding, setShowSetOutstanding] = useState(false);
+  const [outstandingAmount, setOutstandingAmount] = useState('');
+  const [settingOutstanding, setSettingOutstanding] = useState(false);
+
+  // Manual last bill states
+  const [showSetLastBill, setShowSetLastBill] = useState(false);
+  const [lastBillInput, setLastBillInput] = useState('');
+  const [settingLastBill, setSettingLastBill] = useState(false);
 
   const wallet = wallets.find((w) => w.id === walletId);
   const colors = wallet ? getWalletColors(wallet.type, wallet.bankName) : { bg: Colors.ghostGray, text: Colors.carbonBlack };
@@ -145,55 +155,46 @@ export default function WalletReportModal() {
         return;
       }
       const dateNow = Timestamp.now();
+      const sourceName = wallets.find(w => w.id === sourceWalletId)?.name ?? 'Wallet';
 
-      // 1. Log payment received transaction on Credit Card wallet
+      // Log as a proper Transfer: Bank → CC wallet
+      // This correctly reduces bank balance and reduces CC debt (balance goes toward 0)
+      // It is NOT counted as income or expense in budget calculations — just debt settlement.
       await addDoc(collection(db, 'expenses'), {
         uid: user.uid,
-        walletId: walletId,
-        type: 'income',
-        category: 'bills',
+        walletId: sourceWalletId,          // FROM: bank/source wallet
+        toWalletId: walletId,              // TO: credit card wallet
+        type: 'transfer',
+        category: 'transfer',
         amount: amt,
-        note: `Paid from ${wallets.find(w => w.id === sourceWalletId)?.name ?? 'Wallet'}`,
+        note: `CC Repayment → ${wallet?.name ?? 'Card'} from ${sourceName}`,
         date: dateNow,
         isRecurring: false,
         createdAt: dateNow,
       });
 
-      // 2. Log expense transaction on funding Source wallet
-      await addDoc(collection(db, 'expenses'), {
-        uid: user.uid,
-        walletId: sourceWalletId,
-        type: 'expense',
-        category: 'bills',
-        amount: amt,
-        note: `Credit card payment: ${wallet?.name ?? 'Card'}`,
-        date: dateNow,
-        isRecurring: false,
-        createdAt: dateNow,
-      });
-
-      // 3. Subtract from Credit Card outstanding balance
-      await updateDoc(doc(db, 'wallets', walletId), {
-        balance: increment(-amt),
-      });
-
-      // 4. Subtract from funding Source wallet balance
+      // Deduct from bank/source wallet
       await updateDoc(doc(db, 'wallets', sourceWalletId), {
         balance: increment(-amt),
       });
 
-      Toast.show({ type: 'success', text1: 'Bill Paid ✓', text2: `${currencySymbol}${amt.toLocaleString('en-IN')} applied.` });
+      // Reduce CC outstanding balance (balance was positive representing owed amount, now decreases)
+      await updateDoc(doc(db, 'wallets', walletId), {
+        balance: increment(-amt),
+      });
+
+      Toast.show({ type: 'success', text1: 'CC Bill Paid ✓', text2: `${currencySymbol}${amt.toLocaleString('en-IN')} repaid. Debt reduced.` });
       setShowPayBill(false);
 
       // Refresh local transaction list
       const q = query(
         collection(db, 'expenses'),
         where('uid', '==', user.uid),
-        where('walletId', '==', walletId),
         orderBy('date', 'desc'),
       );
       const snap = await getDocs(q);
-      setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Expense)));
+      const allExpenses = snap.docs.map((d) => ({ id: d.id, ...d.data() } as Expense));
+      setExpenses(allExpenses.filter(e => e.walletId === walletId || e.toWalletId === walletId));
     } catch (err: any) {
       Toast.show({ type: 'error', text1: 'Payment Failed', text2: err.message });
     } finally {
@@ -201,11 +202,82 @@ export default function WalletReportModal() {
     }
   };
 
+  const handleSetOutstanding = async () => {
+    const amt = parseFloat(outstandingAmount.replace(/,/g, ''));
+    if (isNaN(amt) || amt < 0) {
+      Toast.show({ type: 'error', text1: 'Invalid Amount', text2: 'Enter a valid outstanding amount (0 or more).' });
+      return;
+    }
+    if (!user || !wallet) return;
+    setSettingOutstanding(true);
+    try {
+      await updateDoc(doc(db, 'wallets', walletId), {
+        balance: amt,
+      });
+      Toast.show({ type: 'success', text1: 'Outstanding Updated ✓', text2: `${wallet.name} outstanding set to ${currencySymbol}${amt.toLocaleString('en-IN')}.` });
+      setShowSetOutstanding(false);
+      setOutstandingAmount('');
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Update Failed', text2: err.message });
+    } finally {
+      setSettingOutstanding(false);
+    }
+  };
+
+  const handleSetLastBill = async () => {
+    const amt = parseFloat(lastBillInput.replace(/,/g, ''));
+    if (isNaN(amt) || amt < 0) {
+      Toast.show({ type: 'error', text1: 'Invalid Amount', text2: 'Enter a valid bill amount (0 or more).' });
+      return;
+    }
+    if (!user || !wallet) return;
+    setSettingLastBill(true);
+    try {
+      await updateDoc(doc(db, 'wallets', walletId), {
+        lastBillAmount: amt,
+      });
+      Toast.show({ type: 'success', text1: 'Last Bill Updated ✓', text2: `${currencySymbol}${amt.toLocaleString('en-IN')} saved.` });
+      setShowSetLastBill(false);
+      setLastBillInput('');
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Update Failed', text2: err.message });
+    } finally {
+      setSettingLastBill(false);
+    }
+  };
+
   const cycleInfo = wallet?.type === 'credit' && wallet.billingCycleStartDay && wallet.paymentDueDay
     ? getCreditCycleInfo(wallet.billingCycleStartDay, wallet.paymentDueDay)
     : null;
 
-  // Category breakdown
+  // Billing cycle charged & paid amounts
+  const cycleCharged = cycleInfo
+    ? expenses
+        .filter(e => e.type === 'expense' && e.walletId === walletId)
+        .filter(e => {
+          const d = e.date.toDate();
+          return d >= cycleInfo.start && d <= cycleInfo.end;
+        })
+        .reduce((s, e) => s + e.amount, 0)
+    : totalSpent;
+
+  const cyclePaid = cycleInfo
+    ? expenses
+        .filter(e => e.type === 'transfer' && e.toWalletId === walletId)
+        .filter(e => {
+          const d = e.date.toDate();
+          return d >= cycleInfo.start && d <= cycleInfo.end;
+        })
+        .reduce((s, e) => s + e.amount, 0)
+    : 0;
+
+  // Last bill = total charged in current cycle (before any payments)
+  const lastBillTotal = cycleCharged;
+  const lastBillUnpaid = Math.max(0, lastBillTotal - cyclePaid);
+
+  // Use manual lastBillAmount if set, otherwise fall back to auto-calculated cycle total
+  const displayLastBill = wallet?.lastBillAmount ?? lastBillTotal;
+
   const catBreakdown: Record<string, number> = {};
   monthlyExpenses.filter((e) => e.type === 'expense').forEach((e) => {
     catBreakdown[e.category] = (catBreakdown[e.category] ?? 0) + e.amount;
@@ -227,24 +299,66 @@ export default function WalletReportModal() {
         </View>
         <View>
           <Text style={[styles.walletName, { color: colors.text }]}>{wallet?.name ?? 'Wallet'}</Text>
-          <Text style={[styles.walletBalance, { color: colors.text }]}>
-            {currencySymbol}{(wallet?.balance ?? 0).toLocaleString('en-IN')}
-          </Text>
-          <Text style={[styles.walletBalanceLabel, { color: colors.text, opacity: 0.6 }]}>
-            {wallet?.type === 'credit' ? 'Outstanding Owed' : 'Current balance'}
-          </Text>
+          {wallet?.type === 'credit' ? (
+            <>
+              <Text style={[styles.walletBalance, { color: '#FF3B30' }]}>
+                −{currencySymbol}{(wallet?.balance ?? 0).toLocaleString('en-IN')}
+              </Text>
+              <Text style={[styles.walletBalanceLabel, { color: colors.text, opacity: 0.7 }]}>
+                💳 Owing — repay to reduce debt
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text style={[styles.walletBalance, { color: colors.text }]}>
+                {currencySymbol}{(wallet?.balance ?? 0).toLocaleString('en-IN')}
+              </Text>
+              <Text style={[styles.walletBalanceLabel, { color: colors.text, opacity: 0.6 }]}>
+                Current balance
+              </Text>
+            </>
+          )}
         </View>
-        {/* This month summary */}
-        <View style={styles.monthRow}>
-          <View style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}>
-            <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>SPENT</Text>
-            <Text style={[styles.monthChipVal, { color: colors.text }]}>{currencySymbol}{totalSpent.toLocaleString('en-IN')}</Text>
+        {/* This month / cycle summary */}
+        {wallet?.type === 'credit' ? (
+          <View style={styles.monthRow}>
+            <View style={[styles.monthChip, { backgroundColor: 'rgba(255,59,48,0.18)' }]}>
+              <Text style={[styles.monthChipLabel, { color: '#FF3B30' }]}>OUTSTANDING</Text>
+              <Text style={[styles.monthChipVal, { color: '#FF3B30', fontWeight: '700' }]}>
+                {currencySymbol}{(wallet?.balance ?? 0).toLocaleString('en-IN')}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}
+              onPress={() => {
+                setLastBillInput(String(displayLastBill));
+                setShowSetLastBill(true);
+              }}
+              activeOpacity={0.75}
+            >
+              <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>LAST BILL ✏️</Text>
+              <Text style={[styles.monthChipVal, { color: colors.text }]}>
+                {currencySymbol}{displayLastBill.toLocaleString('en-IN')}
+              </Text>
+              {cyclePaid > 0 && (
+                <Text style={{ fontSize: 9, color: colors.text, opacity: 0.6, marginTop: 1 }}>
+                  Paid {currencySymbol}{cyclePaid.toLocaleString('en-IN')} • Remaining {currencySymbol}{Math.max(0, displayLastBill - cyclePaid).toLocaleString('en-IN')}
+                </Text>
+              )}
+            </TouchableOpacity>
           </View>
-          <View style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}>
-            <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>RECEIVED</Text>
-            <Text style={[styles.monthChipVal, { color: colors.text }]}>{currencySymbol}{totalReceived.toLocaleString('en-IN')}</Text>
+        ) : (
+          <View style={styles.monthRow}>
+            <View style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}>
+              <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>SPENT</Text>
+              <Text style={[styles.monthChipVal, { color: colors.text }]}>{currencySymbol}{totalSpent.toLocaleString('en-IN')}</Text>
+            </View>
+            <View style={[styles.monthChip, { backgroundColor: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)' }]}>
+              <Text style={[styles.monthChipLabel, { color: colors.text, opacity: 0.7 }]}>RECEIVED</Text>
+              <Text style={[styles.monthChipVal, { color: colors.text }]}>{currencySymbol}{totalReceived.toLocaleString('en-IN')}</Text>
+            </View>
           </View>
-        </View>
+        )}
       </View>
 
       {loading ? (
@@ -319,13 +433,24 @@ export default function WalletReportModal() {
                 </View>
               </View>
 
-              {/* Pay Bill button */}
-              <TouchableOpacity
-                style={styles.payBillBtn}
-                onPress={() => setShowPayBill(true)}
-              >
-                <Text style={styles.payBillBtnText}>Pay Card Bill</Text>
-              </TouchableOpacity>
+              {/* Pay Bill + Set Outstanding buttons */}
+              <View style={styles.billActionsRow}>
+                <TouchableOpacity
+                  style={[styles.payBillBtn, { flex: 1 }]}
+                  onPress={() => setShowPayBill(true)}
+                >
+                  <Text style={styles.payBillBtnText}>Pay Card Bill</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.setOutstandingBtn, { flex: 1 }]}
+                  onPress={() => {
+                    setOutstandingAmount(String(wallet?.balance ?? ''));
+                    setShowSetOutstanding(true);
+                  }}
+                >
+                  <Text style={styles.setOutstandingBtnText}>Set Outstanding</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
 
@@ -367,12 +492,24 @@ export default function WalletReportModal() {
                 let isTransferIn = false;
                 if (e.type === 'transfer') {
                   if (e.toWalletId === walletId) {
+                    // Money coming INTO this wallet via transfer
                     isTransferIn = true;
                     const fromName = wallets.find(w => w.id === e.walletId)?.name ?? 'Other Wallet';
-                    displayCatLabel = `Transfer from ${fromName}`;
+                    // If this is a CC wallet, incoming transfer = repayment
+                    if (wallet?.type === 'credit') {
+                      displayCatLabel = `💳 CC Repayment from ${fromName}`;
+                    } else {
+                      displayCatLabel = `Transfer from ${fromName}`;
+                    }
                   } else {
                     const toName = wallets.find(w => w.id === e.toWalletId)?.name ?? 'Other Wallet';
-                    displayCatLabel = `Transfer to ${toName}`;
+                    // If destination is CC, this is a CC repayment logged from bank side
+                    const destWallet = wallets.find(w => w.id === e.toWalletId);
+                    if (destWallet?.type === 'credit') {
+                      displayCatLabel = `💳 CC Repayment → ${toName}`;
+                    } else {
+                      displayCatLabel = `Transfer to ${toName}`;
+                    }
                   }
                 }
 
@@ -467,6 +604,109 @@ export default function WalletReportModal() {
                       <ActivityIndicator color={Colors.polarWhite} />
                     ) : (
                       <Text style={styles.modalPayText}>Confirm Payment</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Set Outstanding Modal */}
+      <Modal visible={showSetOutstanding} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={() => { setShowSetOutstanding(false); Keyboard.dismiss(); }}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Set Outstanding Amount</Text>
+                <Text style={[styles.modalLabel, { marginBottom: Spacing.sm, color: Colors.mutedStone, textTransform: 'none', fontSize: FontSize.sm }]}>
+                  Enter the actual amount owed on your CC bill (from your bank statement). This overrides the app-calculated balance.
+                </Text>
+
+                <Text style={styles.modalLabel}>ACTUAL OUTSTANDING ({currencySymbol})</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="0"
+                  placeholderTextColor={Colors.mutedStone}
+                  keyboardType="decimal-pad"
+                  value={outstandingAmount}
+                  onChangeText={setOutstandingAmount}
+                  autoFocus
+                />
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setShowSetOutstanding(false)}
+                    disabled={settingOutstanding}
+                  >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalPayBtn}
+                    onPress={handleSetOutstanding}
+                    disabled={settingOutstanding}
+                  >
+                    {settingOutstanding ? (
+                      <ActivityIndicator color={Colors.polarWhite} />
+                    ) : (
+                      <Text style={styles.modalPayText}>Update</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      {/* Set Last Bill Modal */}
+      <Modal visible={showSetLastBill} transparent animationType="slide">
+        <TouchableWithoutFeedback onPress={() => { setShowSetLastBill(false); Keyboard.dismiss(); }}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={styles.modalCard}>
+                <Text style={styles.modalTitle}>Edit Last Bill</Text>
+                <Text style={[styles.modalLabel, { marginBottom: Spacing.sm, color: Colors.mutedStone, textTransform: 'none', fontSize: FontSize.sm }]}>
+                  Set the actual CC bill amount from your statement. Leave blank or tap Reset to use auto-calculated value.
+                </Text>
+
+                <Text style={styles.modalLabel}>BILL AMOUNT ({currencySymbol})</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  placeholder="0"
+                  placeholderTextColor={Colors.mutedStone}
+                  keyboardType="decimal-pad"
+                  value={lastBillInput}
+                  onChangeText={setLastBillInput}
+                  autoFocus
+                />
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={[styles.modalCancelBtn, { flex: 0.6 }]}
+                    onPress={async () => {
+                      // Reset to auto-calculated (remove override)
+                      if (user && wallet) {
+                        await updateDoc(doc(db, 'wallets', walletId), { lastBillAmount: null });
+                        Toast.show({ type: 'success', text1: 'Reset to auto ✓' });
+                      }
+                      setShowSetLastBill(false);
+                    }}
+                    disabled={settingLastBill}
+                  >
+                    <Text style={[styles.modalCancelText, { fontSize: FontSize.xs }]}>Reset to auto</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.modalPayBtn}
+                    onPress={handleSetLastBill}
+                    disabled={settingLastBill}
+                  >
+                    {settingLastBill ? (
+                      <ActivityIndicator color={Colors.polarWhite} />
+                    ) : (
+                      <Text style={styles.modalPayText}>Save</Text>
                     )}
                   </TouchableOpacity>
                 </View>
@@ -600,6 +840,11 @@ const styles = StyleSheet.create({
   cycleLabel: { ...Typography.bodyMedium, fontSize: 10, color: Colors.mutedStone, textTransform: 'uppercase' },
   cycleValue: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.carbonBlack },
   cycleCountdown: { ...Typography.bodyMedium, fontSize: 11, color: Colors.mutedStone },
+  billActionsRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+  },
   payBillBtn: {
     backgroundColor: Colors.carbonBlack,
     borderRadius: Radius.full,
@@ -608,6 +853,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   payBillBtnText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.polarWhite },
+  setOutstandingBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.carbonBlack,
+    borderRadius: Radius.full,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setOutstandingBtnText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.carbonBlack },
   // Modal Styles
   modalOverlay: {
     flex: 1,

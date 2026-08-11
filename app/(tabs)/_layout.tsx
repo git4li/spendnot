@@ -4,10 +4,11 @@
 // ─────────────────────────────────────────────
 import React, { useState } from 'react';
 import { Tabs, router } from 'expo-router';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, Spacing, Radius } from '../../constants/theme';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
+import { useTabBarVisibility } from '../../context/TabBarVisibilityContext';
 
 // ── SVG Icons ────────────────────────────────
 function HomeIcon({ color }: { color: string }) {
@@ -81,6 +82,7 @@ const getPath = (w: number) => {
 function CustomTabBar({ state, navigation }: any) {
   const insets = useSafeAreaInsets();
   const [width, setWidth] = useState(0);
+  const { translateY } = useTabBarVisibility();
 
   const TABS = [
     { name: 'index', Icon: HomeIcon },
@@ -90,8 +92,8 @@ function CustomTabBar({ state, navigation }: any) {
   ];
 
   return (
-    <View
-      style={[tabStyles.outerWrap, { paddingBottom: Math.max(insets.bottom, 12) }]}
+    <Animated.View
+      style={[tabStyles.outerWrap, { paddingBottom: Math.max(insets.bottom, 12), transform: [{ translateY }] }]}
       pointerEvents="box-none"
     >
       <View
@@ -162,7 +164,7 @@ function CustomTabBar({ state, navigation }: any) {
           })}
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 

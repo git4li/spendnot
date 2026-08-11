@@ -8,10 +8,11 @@ import {
   StyleSheet, ScrollView, Alert, ActivityIndicator,
   Keyboard, TouchableWithoutFeedback, Modal, Platform, Image,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
-  doc, getDoc, updateDoc, increment, Timestamp, deleteDoc, arrayUnion
+  doc, getDoc, updateDoc, increment, Timestamp, deleteDoc, arrayUnion, addDoc, collection, getDocs, query, where,
 } from 'firebase/firestore';
 import { auth, db } from '../../lib/firebase';
 import { useAuth } from '../../context/AuthContext';
@@ -62,6 +63,7 @@ export default function EditExpenseModal() {
   const [originalWalletId, setOriginalWalletId] = useState('');
   const [originalToWalletId, setOriginalToWalletId] = useState('');
   const [originalType, setOriginalType] = useState<TransactionType>('expense');
+  const [originalIsRecurring, setOriginalIsRecurring] = useState(false);
 
   const [type, setType] = useState<TransactionType>('expense');
   const [walletId, setWalletId] = useState('');
@@ -87,26 +89,7 @@ export default function EditExpenseModal() {
   // Date and Time picker states
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date());
-
-  const [pickerYear, setPickerYear] = useState(selectedDate.getFullYear());
-  const [pickerMonth, setPickerMonth] = useState(selectedDate.getMonth());
-  const [pickerDay, setPickerDay] = useState(selectedDate.getDate());
-  const [pickerHour, setPickerHour] = useState(12);
-  const [pickerMinute, setPickerMinute] = useState(0);
-  const [pickerAmpm, setPickerAmpm] = useState('AM');
-
-  // Sync date picker states when opened
-  useEffect(() => {
-    if (showDatePicker) {
-      setPickerYear(selectedDate.getFullYear());
-      setPickerMonth(selectedDate.getMonth());
-      setPickerDay(selectedDate.getDate());
-      let h = selectedDate.getHours();
-      setPickerHour(h === 0 ? 12 : h > 12 ? h - 12 : h);
-      setPickerMinute(Math.round(selectedDate.getMinutes() / 5) * 5 % 60);
-      setPickerAmpm(selectedDate.getHours() >= 12 ? 'PM' : 'AM');
-    }
-  }, [showDatePicker, selectedDate]);
+  const [pickerMode, setPickerMode] = useState<'date' | 'time'>('date');
 
   // Keep transfer wallet selections distinct
   useEffect(() => {
@@ -216,6 +199,7 @@ export default function EditExpenseModal() {
           setOriginalWalletId(d.walletId);
           setOriginalToWalletId(d.toWalletId ?? '');
           setOriginalType(d.type);
+          setOriginalIsRecurring(d.isRecurring ?? false);
           
           if (d.date) {
             setSelectedDate(d.date.toDate());
@@ -228,29 +212,51 @@ export default function EditExpenseModal() {
   }, [id]);
 
   const evaluateExpr = (s: string): number => {
-    let cleaned = s.replace(/[+-]+$/, ''); // Strip trailing operators
+    let cleaned = s.replace(/×/g, '*').replace(/÷/g, '/');
+    cleaned = cleaned.replace(/[+\-*/]+$/, ''); // Strip trailing operators
     if (!cleaned) return 0;
 
-    const tokens = cleaned.match(/(\d+\.?\d*)|[+-]/g);
-    if (!tokens) return 0;
-
-    let result = 0;
-    let op = '+';
-    for (const token of tokens) {
-      if (token === '+' || token === '-') {
-        op = token;
-      } else {
-        const num = parseFloat(token);
-        if (!isNaN(num)) {
-          if (op === '+') {
-            result += num;
-          } else {
-            result -= num;
+    try {
+      // Split by '+' or '-' but keep the operators
+      // e.g., "10*5-20/4" -> ["10*5", "-", "20/4"]
+      const tokens = cleaned.split(/([+-])/);
+      
+      // Evaluate multiplication and division for each term first
+      const evaluatedTerms = tokens.map(token => {
+        if (token === '+' || token === '-') return token;
+        
+        const subTokens = token.split(/([\*/])/);
+        let val = parseFloat(subTokens[0]);
+        for (let i = 1; i < subTokens.length; i += 2) {
+          const op = subTokens[i];
+          const nextVal = parseFloat(subTokens[i + 1]);
+          if (isNaN(nextVal)) continue;
+          if (op === '*') {
+            val *= nextVal;
+          } else if (op === '/') {
+            val = nextVal !== 0 ? val / nextVal : 0;
           }
         }
+        return val;
+      });
+
+      // Now evaluate addition and subtraction left-to-right
+      let result = typeof evaluatedTerms[0] === 'number' ? evaluatedTerms[0] : 0;
+      for (let i = 1; i < evaluatedTerms.length; i += 2) {
+        const op = evaluatedTerms[i];
+        const nextVal = evaluatedTerms[i + 1];
+        if (typeof nextVal !== 'number') continue;
+        if (op === '+') {
+          result += nextVal;
+        } else if (op === '-') {
+          result -= nextVal;
+        }
       }
+      return result;
+    } catch (e) {
+      console.error(e);
+      return 0;
     }
-    return result;
   };
 
   const handleKeyInput = (key: string) => {
@@ -263,17 +269,17 @@ export default function EditExpenseModal() {
         if (prev.length <= 1) return '0';
         return prev.slice(0, -1);
       });
-    } else if (key === '+' || key === '-') {
+    } else if (key === '+' || key === '-' || key === '×' || key === '÷') {
       setExpr(prev => {
         const lastChar = prev.slice(-1);
-        if (['+', '-'].includes(lastChar)) {
+        if (['+', '-', '×', '÷'].includes(lastChar)) {
           return prev.slice(0, -1) + key;
         }
         return prev + key;
       });
     } else if (key === '.') {
       setExpr(prev => {
-        const parts = prev.split(/[+-]/);
+        const parts = prev.split(/[+\-×÷]/);
         const lastPart = parts[parts.length - 1];
         if (lastPart.includes('.')) return prev;
         return prev + '.';
@@ -392,6 +398,59 @@ export default function EditExpenseModal() {
         updatedAt: Timestamp.now(),
       });
 
+      // If toggled to recurring now, automatically create checklist template (default monthly to-do)
+      if (type === 'expense' && isRecurring && !originalIsRecurring) {
+        const noteName = note.trim() || `${getCategoryDef(category).label} Bill`;
+        
+        // 1. Create checklist template
+        await addDoc(collection(db, 'checklist_templates'), {
+          uid: user.uid,
+          name: noteName,
+          amount: amt,
+          category,
+          walletId,
+          createdAt: Timestamp.now(),
+        });
+
+        // 2. Sync to current month's checklist item (mark as paid immediately since logged)
+        const currentMonthStr = `${selectedDate.getFullYear()}-${String(selectedDate.getMonth() + 1).padStart(2, '0')}`;
+        
+        // Check if there is an existing checklist item for this month with the same name
+        const clSnap = await getDocs(
+          query(
+            collection(db, 'checklist_items'),
+            where('uid', '==', user.uid),
+            where('month', '==', currentMonthStr),
+            where('name', '==', noteName)
+          )
+        );
+
+        if (!clSnap.empty) {
+          // Update the first matching item to paid
+          const existingDoc = clSnap.docs[0];
+          await updateDoc(doc(db, 'checklist_items', existingDoc.id), {
+            isPaid: true,
+            expenseId: id,
+            amount: amt,
+            paidAt: Timestamp.fromDate(selectedDate),
+          });
+        } else {
+          // Create a new paid checklist item
+          await addDoc(collection(db, 'checklist_items'), {
+            uid: user.uid,
+            month: currentMonthStr,
+            name: noteName,
+            amount: amt,
+            category,
+            walletId,
+            isPaid: true,
+            expenseId: id,
+            paidAt: Timestamp.fromDate(selectedDate),
+            createdAt: Timestamp.now(),
+          });
+        }
+      }
+
       if (originalType === 'transfer') {
         await updateDoc(doc(db, 'wallets', originalWalletId), {
           balance: increment(originalAmount),
@@ -484,56 +543,38 @@ export default function EditExpenseModal() {
     );
   };
 
-  const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
-  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
-
-  const generateCalendarDays = (year: number, month: number) => {
-    const daysInMonth = getDaysInMonth(year, month);
-    const firstDay = getFirstDayOfMonth(year, month);
-    const days: (number | null)[] = [];
-    for (let i = 0; i < firstDay; i++) {
-      days.push(null);
-    }
-    for (let i = 1; i <= daysInMonth; i++) {
-      days.push(i);
-    }
-    return days;
-  };
-
-  const calendarDays = useMemo(() => {
-    return generateCalendarDays(pickerYear, pickerMonth);
-  }, [pickerYear, pickerMonth]);
-
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const handlePrevMonth = () => {
-    if (pickerMonth === 0) {
-      setPickerMonth(11);
-      setPickerYear(y => y - 1);
+  const handleNativeDateChange = (_event: any, date?: Date) => {
+    if (Platform.OS === 'android') {
+      if (!date) { setShowDatePicker(false); return; }
+      if (pickerMode === 'date') {
+        const merged = new Date(selectedDate);
+        merged.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
+        setSelectedDate(merged);
+        setPickerMode('time');
+      } else {
+        const merged = new Date(selectedDate);
+        merged.setHours(date.getHours(), date.getMinutes());
+        setSelectedDate(merged);
+        setShowDatePicker(false);
+        setPickerMode('date');
+      }
     } else {
-      setPickerMonth(m => m - 1);
+      if (date) setSelectedDate(date);
     }
   };
 
-  const handleNextMonth = () => {
-    if (pickerMonth === 11) {
-      setPickerMonth(0);
-      setPickerYear(y => y + 1);
+  const handleIOSPickerDone = () => {
+    if (pickerMode === 'date') {
+      setPickerMode('time');
     } else {
-      setPickerMonth(m => m + 1);
+      setShowDatePicker(false);
+      setPickerMode('date');
     }
   };
 
-  const handleConfirmDatePicker = () => {
-    let h = pickerHour;
-    if (pickerAmpm === 'PM' && h !== 12) h += 12;
-    if (pickerAmpm === 'AM' && h === 12) h = 0;
-    const newD = new Date(pickerYear, pickerMonth, pickerDay, h, pickerMinute);
-    setSelectedDate(newD);
-    setShowDatePicker(false);
+  const handleWebDateChange = (e: any) => {
+    const val = e.target.value;
+    if (val) setSelectedDate(new Date(val));
   };
 
   const formatKeyboardDateTime = (d: Date): string => {
@@ -626,7 +667,11 @@ export default function EditExpenseModal() {
             })}
           </ScrollView>
 
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <ScrollView 
+            showsVerticalScrollIndicator={false} 
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingBottom: 520 }} // A bit larger to accommodate delete button
+          >
             
             {/* Circular Category Row Scroll */}
             {type !== 'transfer' && (
@@ -766,265 +811,270 @@ export default function EditExpenseModal() {
               </>
             )}
 
-            {/* Note, Photo row & Amount display box */}
-            <View style={styles.amountPanelRow}>
-              <View style={styles.mediaActions}>
+            {/* Additional Details Card */}
+            <View style={styles.detailsCard}>
+              <Text style={styles.detailsTitle}>Additional Details</Text>
+              
+              <View style={styles.detailsRow}>
+                {/* Note Button */}
                 <TouchableOpacity 
-                  style={[styles.mediaBtn, note.trim().length > 0 && styles.mediaBtnActive]} 
+                  style={[styles.detailPill, note.trim().length > 0 && styles.detailPillActive]} 
                   onPress={() => setShowNoteModal(true)}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.mediaBtnText, note.trim().length > 0 && { color: '#ffffff' }]}>💬</Text>
+                  <Text style={styles.detailPillEmoji}>💬</Text>
+                  <Text style={[styles.detailPillText, note.trim().length > 0 && styles.detailPillTextActive]}>
+                    {note.trim().length > 0 ? 'Edit Note' : 'Add Note'}
+                  </Text>
                 </TouchableOpacity>
+
+                {/* Photo Button */}
                 <TouchableOpacity 
-                  style={[styles.mediaBtn, isRecurring && styles.mediaBtnActive]} 
+                  style={[styles.detailPill, photoUri && styles.detailPillActive]} 
+                  onPress={handleSelectPhoto}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.detailPillEmoji}>📎</Text>
+                  <Text style={[styles.detailPillText, photoUri && styles.detailPillTextActive]}>
+                    {photoUri ? 'Change Photo' : 'Add Photo'}
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Recurring Toggle Button */}
+                <TouchableOpacity 
+                  style={[styles.detailPill, isRecurring && styles.detailPillActive]} 
                   onPress={() => { setIsRecurring(!isRecurring); Haptics.selectionAsync(); }}
                   activeOpacity={0.8}
                 >
-                  <Text style={[styles.mediaBtnText, isRecurring && { color: '#ffffff' }]}>🔁</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.amountBox}>
-                <Text style={styles.amountCurrencySymbol}>{currencySymbol}</Text>
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.amountExprScroll}
-                >
-                  <Text style={styles.amountExprText}>
-                    {expr || '0'}
+                  <Text style={styles.detailPillEmoji}>🔁</Text>
+                  <Text style={[styles.detailPillText, isRecurring && styles.detailPillTextActive]}>
+                    Recurring
                   </Text>
-                </ScrollView>
+                </TouchableOpacity>
               </View>
+
+              {/* Previews inside the card */}
+              {(note.trim().length > 0 || photoUri) && (
+                <View style={styles.attachmentsRow}>
+                  {note.trim().length > 0 && (
+                    <View style={styles.noteBubble}>
+                      <Text style={styles.noteBubbleEmoji}>💬</Text>
+                      <Text style={styles.noteBubbleText} numberOfLines={2}>
+                        {note}
+                      </Text>
+                      <TouchableOpacity onPress={() => setNote('')} style={styles.noteBubbleClose}>
+                        <Text style={styles.noteBubbleCloseText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+
+                  {photoUri && (
+                    <View style={styles.thumbnailWrapper}>
+                      <Image source={{ uri: photoUri }} style={styles.thumbnailImage} />
+                      <TouchableOpacity onPress={() => setPhotoUri(null)} style={styles.thumbnailDeleteBadge}>
+                        <Text style={styles.thumbnailDeleteText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                </View>
+              )}
             </View>
 
-
-
-            {note.trim().length > 0 && (
-              <View style={styles.noteBubble}>
-                <Text style={styles.noteBubbleEmoji}>💬</Text>
-                <Text style={styles.noteBubbleText} numberOfLines={2}>
-                  {note}
-                </Text>
-                <TouchableOpacity onPress={() => setNote('')} style={styles.noteBubbleClose}>
-                  <Text style={styles.noteBubbleCloseText}>×</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* Custom Keyboard grid */}
-            <View style={styles.keyboardContainer}>
-              <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('1')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>1</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('2')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>2</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('3')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>3</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.dateKeyBtn]} onPress={() => setShowDatePicker(true)} activeOpacity={0.7}>
-                  <Text style={styles.dateKeyText}>{formatKeyboardDateTime(selectedDate)}</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('4')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>4</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('5')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>5</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('6')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>6</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('+')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>+</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('7')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>7</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('8')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>8</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('9')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>9</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('-')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>−</Text>
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.keyboardRow}>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('.')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>.</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('0')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>0</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('backspace')} activeOpacity={0.7}>
-                  <Text style={styles.keyText}>⌫</Text>
-                </TouchableOpacity>
-                {(() => {
-                  let submitBg: string = Colors.expense;
-                  let submitTextCol: string = Colors.expenseText;
-                  if (type === 'income') {
-                    submitBg = Colors.income;
-                    submitTextCol = Colors.incomeText;
-                  } else if (type === 'savings') {
-                    submitBg = Colors.savings;
-                    submitTextCol = Colors.savingsText;
-                  } else if (type === 'transfer') {
-                    submitBg = Colors.periwinkle;
-                    submitTextCol = Colors.mutedStone;
-                  }
-                  return (
-                    <TouchableOpacity 
-                      style={[styles.keyBtn, { backgroundColor: submitBg }]} 
-                      onPress={() => handleKeyInput('submit')}
-                      activeOpacity={0.7}
-                    >
-                      {saving ? (
-                        <ActivityIndicator size="small" color={submitTextCol} />
-                      ) : (
-                        <Text style={[styles.submitKeyText, { color: submitTextCol }]}>✓</Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                })()}
-              </View>
-            </View>
-
+            {/* Delete Transaction button inside ScrollView */}
+            <TouchableOpacity
+              style={[styles.deleteBtn, saving && { opacity: 0.6 }, { marginTop: Spacing.lg, marginBottom: Spacing.base }]}
+              onPress={handleDelete}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.deleteBtnText}>Delete Transaction</Text>
+            </TouchableOpacity>
 
           </ScrollView>
 
-          <TouchableOpacity
-            style={[styles.deleteBtn, saving && { opacity: 0.6 }, { marginBottom: Math.max(bottom - 8, 8) }]}
-            onPress={handleDelete}
-            disabled={saving}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.deleteBtnText}>Delete Transaction</Text>
-          </TouchableOpacity>
+          {/* Sticky Calculator & Keypad at the bottom */}
+          <View style={styles.keyboardContainer}>
+            {/* Amount display box */}
+            <View style={styles.amountBox}>
+              <Text style={styles.amountCurrencySymbol}>{currencySymbol}</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.amountExprScroll}
+              >
+                <Text style={styles.amountExprText}>
+                  {expr || '0'}
+                </Text>
+              </ScrollView>
+            </View>
+
+            {/* Keypad Row 1 */}
+            <View style={styles.keyboardRow}>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('1')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>1</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('2')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>2</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('3')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>3</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('÷')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>÷</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Keypad Row 2 */}
+            <View style={styles.keyboardRow}>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('4')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>4</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('5')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>5</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('6')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>6</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('×')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>×</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Keypad Row 3 */}
+            <View style={styles.keyboardRow}>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('7')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>7</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('8')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>8</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('9')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>9</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('-')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>−</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Keypad Row 4 */}
+            <View style={styles.keyboardRow}>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('.')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>.</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.keyBtn} onPress={() => handleKeyInput('0')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>0</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('backspace')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>⌫</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.keyBtn, styles.opKeyBtn]} onPress={() => handleKeyInput('+')} activeOpacity={0.7}>
+                <Text style={styles.keyText}>+</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Keypad Row 5 (Date and Submit) */}
+            <View style={styles.keyboardRow}>
+              {Platform.OS === 'web' ? (
+                <View style={{ flex: 1.5, position: 'relative' }}>
+                  <TouchableOpacity style={[styles.keyBtn, styles.dateKeyBtn, { width: '100%' }]} activeOpacity={0.7}>
+                    <Text style={styles.dateKeyText}>{formatKeyboardDateTime(selectedDate)}</Text>
+                    {/* @ts-ignore */}
+                    <input
+                      type="datetime-local"
+                      value={(() => {
+                        const d = selectedDate;
+                        const pad = (n: number) => String(n).padStart(2, '0');
+                        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                      })()}
+                      onChange={handleWebDateChange}
+                      style={{
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        opacity: 0,
+                        cursor: 'pointer',
+                      }}
+                    />
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity style={[styles.keyBtn, styles.dateKeyBtn, { flex: 1.5 }]} onPress={() => { setShowDatePicker(true); setPickerMode('date'); }} activeOpacity={0.7}>
+                  <Text style={styles.dateKeyText}>{formatKeyboardDateTime(selectedDate)}</Text>
+                </TouchableOpacity>
+              )}
+              {(() => {
+                let submitBg: string = Colors.expense;
+                let submitTextCol: string = Colors.expenseText;
+                if (type === 'income') {
+                  submitBg = Colors.income;
+                  submitTextCol = Colors.incomeText;
+                } else if (type === 'savings') {
+                  submitBg = Colors.savings;
+                  submitTextCol = Colors.savingsText;
+                } else if (type === 'transfer') {
+                  submitBg = Colors.mutedStone;
+                  submitTextCol = Colors.polarWhite;
+                }
+                return (
+                  <TouchableOpacity 
+                    style={[styles.keyBtn, { backgroundColor: submitBg, flex: 2.5 }]} 
+                    onPress={() => handleKeyInput('submit')}
+                    activeOpacity={0.7}
+                  >
+                    {saving ? (
+                      <ActivityIndicator size="small" color={submitTextCol} />
+                    ) : (
+                      <Text style={[styles.submitKeyText, { color: submitTextCol, fontSize: 16, fontFamily: 'Inter_700Bold' }]}>✓ Done</Text>
+                    )}
+                  </TouchableOpacity>
+                );
+              })()}
+            </View>
+          </View>
         </View>
       </KeyboardDismissWrapper>
 
-      {/* Custom Date & Time Picker Modal */}
-      <Modal visible={showDatePicker} transparent animationType="fade">
-        <TouchableWithoutFeedback onPress={() => setShowDatePicker(false)}>
-          <View style={styles.modalOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={styles.modalCard}>
-                <Text style={styles.modalTitle}>Select Date & Time</Text>
-
-                <View style={styles.pickerHeader}>
-                  <TouchableOpacity onPress={handlePrevMonth}>
-                    <Text style={styles.pickerArrow}>◀</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.pickerMonthTitle}>
-                    {monthNames[pickerMonth]} {pickerYear}
+      {/* Native Date & Time Picker */}
+      {Platform.OS === 'ios' ? (
+        <Modal visible={showDatePicker} transparent animationType="slide">
+          <View style={styles.iosPickerOverlay}>
+            <View style={styles.iosPickerCard}>
+              <View style={styles.iosPickerHeader}>
+                <TouchableOpacity onPress={() => { setShowDatePicker(false); setPickerMode('date'); }}>
+                  <Text style={styles.iosPickerCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={styles.iosPickerTitle}>
+                  {pickerMode === 'date' ? 'Select Date' : 'Select Time'}
+                </Text>
+                <TouchableOpacity onPress={handleIOSPickerDone}>
+                  <Text style={styles.iosPickerDone}>
+                    {pickerMode === 'date' ? 'Next' : 'Done'}
                   </Text>
-                  <TouchableOpacity onPress={handleNextMonth}>
-                    <Text style={styles.pickerArrow}>▶</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.weekdaysRow}>
-                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, i) => (
-                    <Text key={i} style={styles.weekdayText}>{day}</Text>
-                  ))}
-                </View>
-
-                <View style={styles.daysGrid}>
-                  {calendarDays.map((day, idx) => {
-                    const isSelected = day === pickerDay;
-                    return (
-                      <TouchableOpacity
-                        key={idx}
-                        style={[styles.dayCell, isSelected && styles.dayCellSelected]}
-                        disabled={day === null}
-                        onPress={() => day && setPickerDay(day)}
-                      >
-                        <Text style={[styles.dayCellText, isSelected && styles.dayCellTextSelected, !day && { color: 'transparent' }]}>
-                          {day}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <Text style={styles.pickerSectionTitle}>Time</Text>
-                
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-                  {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => {
-                    const isSelected = pickerHour === h;
-                    return (
-                      <TouchableOpacity
-                        key={h}
-                        style={[styles.timeChip, isSelected && styles.timeChipSelected]}
-                        onPress={() => setPickerHour(h)}
-                      >
-                        <Text style={[styles.timeChipText, isSelected && styles.timeChipTextSelected]}>
-                          {h}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
-                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((m) => {
-                    const isSelected = pickerMinute === m;
-                    const displayMin = String(m).padStart(2, '0');
-                    return (
-                      <TouchableOpacity
-                        key={m}
-                        style={[styles.timeChip, isSelected && styles.timeChipSelected]}
-                        onPress={() => setPickerMinute(m)}
-                      >
-                        <Text style={[styles.timeChipText, isSelected && styles.timeChipTextSelected]}>
-                          {displayMin}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-
-                <View style={styles.ampmRow}>
-                  {['AM', 'PM'].map((mode) => {
-                    const isSelected = pickerAmpm === mode;
-                    return (
-                      <TouchableOpacity
-                        key={mode}
-                        style={[styles.ampmChip, isSelected && styles.ampmChipSelected]}
-                        onPress={() => setPickerAmpm(mode)}
-                      >
-                        <Text style={[styles.ampmChipText, isSelected && styles.ampmChipTextSelected]}>
-                          {mode}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <View style={styles.modalActions}>
-                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowDatePicker(false)}>
-                    <Text style={styles.modalCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.modalAddBtn} onPress={handleConfirmDatePicker}>
-                    <Text style={styles.modalAddText}>Confirm</Text>
-                  </TouchableOpacity>
-                </View>
+                </TouchableOpacity>
               </View>
-            </TouchableWithoutFeedback>
+              <DateTimePicker
+                value={selectedDate}
+                mode={pickerMode}
+                display="spinner"
+                onChange={handleNativeDateChange}
+                style={{ width: '100%' }}
+                themeVariant="light"
+              />
+            </View>
           </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+        </Modal>
+      ) : (
+        showDatePicker && (
+          <DateTimePicker
+            value={selectedDate}
+            mode={pickerMode}
+            display="default"
+            onChange={handleNativeDateChange}
+          />
+        )
+      )}
 
       {/* Note input Modal */}
       <Modal visible={showNoteModal} transparent animationType="fade">
@@ -1395,11 +1445,16 @@ const styles = StyleSheet.create({
   },
   // Custom keyboard
   keyboardContainer: {
-    gap: Spacing.sm,
-    marginBottom: Spacing.base,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    gap: Spacing.xs,
     backgroundColor: '#F2F2F7', // Modern light iOS system gray area
-    borderRadius: Radius.lg,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
     padding: Spacing.sm,
+    paddingBottom: Platform.OS === 'ios' ? 24 : Spacing.sm,
   },
   keyboardRow: {
     flexDirection: 'row',
@@ -1407,7 +1462,7 @@ const styles = StyleSheet.create({
   },
   keyBtn: {
     flex: 1,
-    height: 52,
+    height: 58, // Taller buttons for premium spacing
     borderRadius: Radius.md,
     backgroundColor: '#FFFFFF', // Solid light key background for high contrast
     alignItems: 'center',
@@ -1420,7 +1475,7 @@ const styles = StyleSheet.create({
   },
   keyText: {
     fontFamily: 'Montserrat_900Black',
-    fontSize: FontSize.xl,
+    fontSize: 22, // Bigger text as requested
     color: Colors.carbonBlack,
   },
   opKeyBtn: {
@@ -1429,6 +1484,63 @@ const styles = StyleSheet.create({
   dateKeyBtn: {
     backgroundColor: '#E5E5EA',
     paddingVertical: 2,
+  },
+  
+  // Additional Details card and chips styling
+  detailsCard: {
+    backgroundColor: '#F9F9FB',
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.base,
+    borderWidth: 1,
+    borderColor: '#EFEFEF',
+  },
+  detailsTitle: {
+    ...Typography.bodyBold,
+    fontSize: 10,
+    color: Colors.mutedStone,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.sm,
+  },
+  detailsRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  detailPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFEFEF',
+    borderRadius: Radius.full,
+    paddingVertical: 10,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  detailPillActive: {
+    backgroundColor: Colors.carbonBlack,
+    borderColor: Colors.carbonBlack,
+  },
+  detailPillEmoji: {
+    fontSize: 14,
+  },
+  detailPillText: {
+    ...Typography.bodyMedium,
+    fontSize: 11,
+    color: Colors.mutedStone,
+  },
+  detailPillTextActive: {
+    color: '#ffffff',
+    fontFamily: 'Inter_700Bold',
+  },
+  attachmentsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginTop: Spacing.md,
+    flexWrap: 'wrap',
   },
   dateKeyText: {
     ...Typography.bodyBold,
@@ -1446,113 +1558,41 @@ const styles = StyleSheet.create({
     color: Colors.carbonBlack,
   },
 
-  // Custom picker styles
-  pickerHeader: {
+  // iOS native picker bottom sheet styles
+  iosPickerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  iosPickerCard: {
+    backgroundColor: Colors.polarWhite,
+    borderTopLeftRadius: Radius['2xl'],
+    borderTopRightRadius: Radius['2xl'],
+    paddingBottom: Spacing.xl,
+  },
+  iosPickerHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.base,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Colors.ghostGray,
   },
-  pickerArrow: {
-    fontSize: 18,
-    color: Colors.mutedStone,
-    paddingHorizontal: Spacing.sm,
-  },
-  pickerMonthTitle: {
+  iosPickerTitle: {
     ...Typography.bodyBold,
-    fontSize: FontSize.md,
+    fontSize: FontSize.base,
     color: Colors.carbonBlack,
   },
-  weekdaysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.xs,
-  },
-  weekdayText: {
-    ...Typography.bodyBold,
-    fontSize: FontSize.xs,
-    color: Colors.mutedStone,
-    width: 32,
-    textAlign: 'center',
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-around',
-    marginBottom: Spacing.md,
-  },
-  dayCell: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: Radius.full,
-    marginVertical: 2,
-  },
-  dayCellSelected: {
-    backgroundColor: '#FF3B30',
-  },
-  dayCellText: {
+  iosPickerCancel: {
     ...Typography.bodyMedium,
-    fontSize: FontSize.sm,
-    color: Colors.carbonBlack,
-  },
-  dayCellTextSelected: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-  },
-  pickerSectionTitle: {
-    ...Typography.bodyBold,
-    fontSize: FontSize.sm,
-    color: Colors.carbonBlack,
-    marginBottom: Spacing.xs,
-    marginTop: Spacing.xs,
-  },
-  timeScroll: {
-    flexDirection: 'row',
-    marginBottom: Spacing.sm,
-  },
-  timeChip: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 6,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.ghostGray,
-    marginRight: 6,
-  },
-  timeChipSelected: {
-    backgroundColor: Colors.carbonBlack,
-  },
-  timeChipText: {
-    ...Typography.bodyMedium,
-    fontSize: FontSize.sm,
+    fontSize: FontSize.base,
     color: Colors.mutedStone,
   },
-  timeChipTextSelected: {
-    color: '#ffffff',
-    fontWeight: 'bold',
-  },
-  ampmRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  ampmChip: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.ghostGray,
-    alignItems: 'center',
-  },
-  ampmChipSelected: {
-    backgroundColor: Colors.carbonBlack,
-  },
-  ampmChipText: {
+  iosPickerDone: {
     ...Typography.bodyBold,
-    fontSize: FontSize.sm,
-    color: Colors.mutedStone,
-  },
-  ampmChipTextSelected: {
-    color: '#ffffff',
+    fontSize: FontSize.base,
+    color: '#007AFF',
   },
 
   // Modal styles

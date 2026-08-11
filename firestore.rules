@@ -95,6 +95,26 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.uid);
     }
 
+    // ── checklist_templates/{templateId} ──────
+    match /checklist_templates/{templateId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'name', 'amount', 'category', 'walletId', 'createdAt'])
+        && isValidAmount();
+      allow update: if isOwner(resource.data.uid) && isOwner(request.resource.data.uid);
+      allow delete: if isOwner(resource.data.uid);
+    }
+
+    // ── checklist_items/{itemId} ──────────────
+    match /checklist_items/{itemId} {
+      allow read: if isOwner(resource.data.uid);
+      allow create: if isOwner(request.resource.data.uid)
+        && request.resource.data.keys().hasAll(['uid', 'month', 'name', 'amount', 'category', 'walletId', 'isPaid', 'expenseId', 'paidAt', 'createdAt'])
+        && isValidAmount();
+      allow update: if isOwner(resource.data.uid) && isOwner(request.resource.data.uid);
+      allow delete: if isOwner(resource.data.uid);
+    }
+
     // Block all other collections
     match /{document=**} {
       allow read, write: if false;

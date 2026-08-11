@@ -1,38 +1,102 @@
 // ─────────────────────────────────────────────
-//  SPENDNOT — Budgets Screen (Screen 5)
+//  SPENDNOT — Budgets & To-Do Screen (Screen 5)
 //  app/(tabs)/budgets.tsx
 // ─────────────────────────────────────────────
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, ActivityIndicator, Alert,
   Modal, TextInput, KeyboardAvoidingView, Platform,
   Pressable,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import {
-  doc, updateDoc, setDoc, Timestamp, collection, addDoc, deleteDoc,
+  doc, updateDoc, setDoc, Timestamp, collection, addDoc, deleteDoc, query, where, onSnapshot, increment, writeBatch
 } from 'firebase/firestore';
 import { useBudgets } from '../../hooks/useBudgets';
-import { useMonthlyExpenses } from '../../hooks/useExpenses';
-import { useRecurring } from '../../hooks/useRecurring';
 import { useWallets } from '../../hooks/useWallets';
 import { useEmis } from '../../hooks/useEmis';
 import { useAuth } from '../../context/AuthContext';
 import { db } from '../../lib/firebase';
 import {
   Colors, FontSize, Radius, Spacing, Typography,
-  CATEGORIES, getCategoryDef, CategoryKey,
+  CATEGORIES, getCategoryDef, CategoryKey, WalletColors
 } from '../../constants/theme';
-import { Recurring } from '../../types/models';
+import { Budget, Expense, ChecklistItem } from '../../types/models';
 import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 import { BudgetCardSkeleton } from '../../components/Skeleton';
+import { useChecklist } from '../../hooks/useChecklist';
+import { EditChecklistItemSheet, ManageTemplatesSheet } from '../../components/ChecklistSheets';
+import { useTabBarVisibility } from '../../context/TabBarVisibilityContext';
+import { useCustomCategories } from '../../hooks/useCustomCategories';
 
-type BudgetTab = 'budgets' | 'recurring' | 'emis';
+type BudgetTab = 'budgets' | 'checklist' | 'emis';
 type Period = 'weekly' | 'monthly';
-type Frequency = 'weekly' | 'monthly' | 'yearly';
+
+// ── Add Category Modal ─────────────────────────
+interface AddCategoryModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onAdd: (emoji: string, label: string) => Promise<string | undefined>;
+}
+
+function AddCategoryModal({ visible, onClose, onAdd }: AddCategoryModalProps) {
+  const [emoji, setEmoji] = useState('⭐');
+  const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!label.trim()) { Alert.alert('Name required', 'Enter a category name.'); return; }
+    setSaving(true);
+    try {
+      await onAdd(emoji.trim() || '⭐', label.trim());
+      setEmoji('⭐');
+      setLabel('');
+      onClose();
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent presentationStyle="overFullScreen">
+      <Pressable style={sheetStyles.backdrop} onPress={onClose} />
+      <View style={{ flex: 1, justifyContent: 'center', padding: Spacing.xl, backgroundColor: 'rgba(0,0,0,0.4)' }}>
+        <View style={{ backgroundColor: Colors.polarWhite, borderRadius: Radius['2xl'], padding: Spacing.xl, gap: Spacing.base }}>
+          <Text style={{ ...Typography.bodyBold, fontSize: FontSize.xl, color: Colors.carbonBlack }}>Add Category</Text>
+          <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+            <TextInput
+              style={[sheetStyles.textInput, { width: 60, textAlign: 'center', fontSize: 24, marginBottom: 0 }]}
+              value={emoji}
+              onChangeText={setEmoji}
+              placeholder="⭐"
+              maxLength={4}
+            />
+            <TextInput
+              style={[sheetStyles.textInput, { flex: 1, marginBottom: 0 }]}
+              value={label}
+              onChangeText={setLabel}
+              placeholder="Category Name"
+              autoFocus
+            />
+          </View>
+          <View style={{ flexDirection: 'row', gap: Spacing.sm, marginTop: Spacing.sm }}>
+            <TouchableOpacity style={[sheetStyles.saveBtn, { flex: 1, backgroundColor: Colors.ghostGray }]} onPress={onClose}>
+              <Text style={[sheetStyles.saveBtnText, { color: Colors.mutedStone }]}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[sheetStyles.saveBtn, { flex: 1 }]} onPress={handleSave} disabled={saving}>
+              <Text style={sheetStyles.saveBtnText}>{saving ? 'Adding…' : 'Add'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 // ── Progress Bar ─────────────────────────────
 function ProgressBar({ value, max, color = Colors.carbonBlack }: { value: number; max: number; color?: string }) {
@@ -51,135 +115,37 @@ const barStyles = StyleSheet.create({
   fill: { height: '100%', borderRadius: Radius.full },
 });
 
-// ── Recurring Card ───────────────────────────
-function RecurringCard({ item, walletName }: { item: Recurring; walletName: string }) {
-  const { user } = useAuth();
-  const due = item.nextDueDate.toDate();
-  const isOverdue = due < new Date();
-  const dateStr = due.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-  const [marking, setMarking] = useState(false);
 
-  const handleMarkPaid = async () => {
-    if (!user) return;
-    setMarking(true);
-    try {
-      await addDoc(collection(db, 'expenses'), {
-        uid: user.uid,
-        walletId: item.walletId,
-        type: 'expense',
-        category: 'bills',
-        amount: item.amount,
-        note: item.name,
-        date: Timestamp.now(),
-        isRecurring: true,
-        recurringId: item.id,
-        createdAt: Timestamp.now(),
-      });
-
-      const next = new Date(item.nextDueDate.toDate());
-      if (item.frequency === 'monthly') next.setMonth(next.getMonth() + 1);
-      else if (item.frequency === 'weekly') next.setDate(next.getDate() + 7);
-      else next.setFullYear(next.getFullYear() + 1);
-
-      await updateDoc(doc(db, 'recurring', item.id), {
-        isPaid: true,
-        lastPaidDate: Timestamp.now(),
-        nextDueDate: Timestamp.fromDate(next),
-      });
-
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch (e) {}
-      Toast.show({ type: 'success', text1: 'Marked as paid ✓', text2: item.name });
-    } catch (err: any) {
-      Alert.alert('Error', err.message);
-    } finally {
-      setMarking(false);
-    }
-  };
-
-  return (
-    <View style={[rcStyles.card, isOverdue && rcStyles.overdueCard]}>
-      <View style={rcStyles.icon}>
-        <Text style={{ fontSize: 20 }}>📋</Text>
-      </View>
-      <View style={rcStyles.info}>
-        <Text style={rcStyles.name}>{item.name}</Text>
-        <Text style={rcStyles.sub}>
-          {item.frequency.charAt(0).toUpperCase() + item.frequency.slice(1)} · {walletName}
-        </Text>
-        <Text style={[rcStyles.due, isOverdue && { color: Colors.powerPink }]}>
-          Due {dateStr}
-        </Text>
-      </View>
-      <View style={rcStyles.right}>
-        <Text style={rcStyles.amount}>₹{item.amount.toLocaleString('en-IN')}</Text>
-        {item.isAutoDeduct ? (
-          <View style={rcStyles.autoBadge}>
-            <Text style={rcStyles.autoBadgeText}>AUTO</Text>
-          </View>
-        ) : (
-          <TouchableOpacity
-            style={rcStyles.markBtn}
-            onPress={handleMarkPaid}
-            disabled={marking || item.isPaid}
-          >
-            <Text style={rcStyles.markBtnText}>
-              {item.isPaid ? '✓ Paid' : marking ? '...' : 'Mark Paid'}
-            </Text>
-          </TouchableOpacity>
-        )}
-      </View>
-    </View>
-  );
+// ── Budget Sheet (Add + Edit) ─────────────────
+interface BudgetSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  existingBudget?: Budget | null; // if set → edit mode
 }
 
-const rcStyles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.polarWhite,
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.ghostGray,
-    padding: Spacing.base,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    marginBottom: Spacing.md,
-  },
-  overdueCard: { borderLeftWidth: 4, borderLeftColor: Colors.powerPink },
-  icon: {
-    width: 40, height: 40,
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.full,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  info: { flex: 1 },
-  name: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.carbonBlack },
-  sub: { ...Typography.body, fontSize: FontSize.sm, color: Colors.mutedStone, marginTop: 2 },
-  due: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.skyBlue, marginTop: 2 },
-  right: { alignItems: 'flex-end', gap: 6 },
-  amount: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.carbonBlack },
-  markBtn: {
-    backgroundColor: Colors.limePop,
-    borderRadius: Radius.full,
-    paddingHorizontal: 12, paddingVertical: 5,
-  },
-  markBtnText: { ...Typography.bodyBold, fontSize: FontSize.xs, color: Colors.carbonBlack },
-  autoBadge: {
-    backgroundColor: Colors.skyBlue,
-    borderRadius: Radius.full,
-    paddingHorizontal: 10, paddingVertical: 4,
-  },
-  autoBadgeText: { ...Typography.bodyBold, fontSize: 10, color: Colors.carbonBlack },
-});
-
-// ── Add Budget Sheet ──────────────────────────
-function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function BudgetSheet({ visible, onClose, existingBudget }: BudgetSheetProps) {
   const { user } = useAuth();
-  const [category, setCategory] = useState<CategoryKey>('food');
+  const isEdit = !!existingBudget;
+  const { categories, addCustomCategory } = useCustomCategories();
+  const [category, setCategory] = useState<string>('food');
   const [limit, setLimit] = useState('');
   const [period, setPeriod] = useState<Period>('monthly');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [showAddCat, setShowAddCat] = useState(false);
+
+  // Pre-fill when editing
+  useEffect(() => {
+    if (existingBudget) {
+      setCategory(existingBudget.category);
+      setLimit(existingBudget.limit.toString());
+      setPeriod(existingBudget.period as Period);
+    } else {
+      setCategory('food');
+      setLimit('');
+      setPeriod('monthly');
+    }
+  }, [existingBudget, visible]);
 
   const handleSave = async () => {
     if (!user) return;
@@ -190,20 +156,23 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
     }
     setSaving(true);
     try {
-      // Budget ID is uid_category_period so it's one per category per period
-      const budgetId = `${user.uid}_${category}_${period}`;
-      await setDoc(doc(db, 'budgets', budgetId), {
-        uid: user.uid,
-        category,
-        limit: amt,
-        period,
-        createdAt: Timestamp.now(),
-      });
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch (e) {}
-      Toast.show({ type: 'success', text1: 'Budget set ✓' });
-      setLimit('');
+      if (isEdit && existingBudget) {
+        // Update existing budget
+        await updateDoc(doc(db, 'budgets', existingBudget.id), { limit: amt, period });
+      } else {
+        // Create new (or overwrite with setDoc using deterministic ID)
+        const budgetId = `${user.uid}_${category.replace(/:/g, '_')}_${period}`;
+        await setDoc(doc(db, 'budgets', budgetId), {
+          uid: user.uid,
+          category,
+          limit: amt,
+          period,
+          startDate: Timestamp.now(),
+          createdAt: Timestamp.now(),
+        });
+      }
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch (e) {}
+      Toast.show({ type: 'success', text1: isEdit ? 'Budget updated ✓' : 'Budget set ✓' });
       onClose();
     } catch (err: any) {
       Alert.alert('Error', err.message);
@@ -212,16 +181,43 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
     }
   };
 
+  const handleDelete = () => {
+    if (!existingBudget) return;
+    Alert.alert('Delete Budget', 'Remove this spending limit?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          setDeleting(true);
+          try {
+            await deleteDoc(doc(db, 'budgets', existingBudget.id));
+            Toast.show({ type: 'success', text1: 'Budget deleted ✓' });
+            onClose();
+          } catch (err: any) {
+            Alert.alert('Error', err.message);
+          } finally {
+            setDeleting(false);
+          }
+        }
+      }
+    ]);
+  };
+
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
       <Pressable style={sheetStyles.backdrop} onPress={onClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={sheetStyles.wrapper}>
         <View style={sheetStyles.sheet}>
-          {/* Handle */}
           <View style={sheetStyles.handle} />
-          <Text style={sheetStyles.sheetTitle}>Set Budget</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.base }}>
+            <Text style={sheetStyles.sheetTitle}>{isEdit ? 'Edit Budget' : 'Set Budget'}</Text>
+            {isEdit && (
+              <TouchableOpacity onPress={handleDelete} disabled={deleting}>
+                <Text style={{ fontSize: 22, opacity: deleting ? 0.4 : 0.8 }}>🗑️</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
-          {/* Period toggle */}
           <Text style={sheetStyles.label}>Period</Text>
           <View style={sheetStyles.row}>
             {(['weekly', 'monthly'] as Period[]).map((p) => (
@@ -237,24 +233,52 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
             ))}
           </View>
 
-          {/* Category grid */}
-          <Text style={sheetStyles.label}>Category</Text>
-          <View style={sheetStyles.catGrid}>
-            {CATEGORIES.map((c) => (
-              <TouchableOpacity
-                key={c.key}
-                style={[sheetStyles.catCell, category === c.key && sheetStyles.catCellActive]}
-                onPress={() => setCategory(c.key)}
-              >
-                <Text style={sheetStyles.catEmoji}>{c.emoji}</Text>
-                <Text style={[sheetStyles.catLabel, category === c.key && sheetStyles.catLabelActive]}>
-                  {c.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          {!isEdit && (
+            <>
+              <Text style={sheetStyles.label}>Category</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={sheetStyles.catScroll}>
+                <TouchableOpacity
+                  style={sheetStyles.catCell}
+                  onPress={() => setShowAddCat(true)}
+                >
+                  <Text style={sheetStyles.catEmoji}>＋</Text>
+                  <Text style={sheetStyles.catLabel}>Add New</Text>
+                </TouchableOpacity>
+                {categories.map((c) => (
+                  <TouchableOpacity
+                    key={c.key}
+                    style={[sheetStyles.catCell, category === c.key && sheetStyles.catCellActive]}
+                    onPress={() => setCategory(c.key)}
+                  >
+                    <Text style={sheetStyles.catEmoji}>{c.emoji}</Text>
+                    <Text style={[sheetStyles.catLabel, category === c.key && sheetStyles.catLabelActive]}>
+                      {c.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          )}
 
-          {/* Limit input */}
+          {isEdit && existingBudget && (
+            <View style={{ backgroundColor: Colors.ghostGray, borderRadius: Radius.md, padding: Spacing.base, marginBottom: Spacing.base }}>
+              <Text style={{ ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.mutedStone }}>Category</Text>
+              <Text style={{ ...Typography.bodyBold, fontSize: FontSize.md, color: Colors.carbonBlack, marginTop: 4 }}>
+                {getCategoryDef(existingBudget.category).emoji} {getCategoryDef(existingBudget.category).label}
+              </Text>
+            </View>
+          )}
+
+          <AddCategoryModal
+            visible={showAddCat}
+            onClose={() => setShowAddCat(false)}
+            onAdd={async (emoji, label) => {
+              const addedKey = await addCustomCategory(emoji, label);
+              if (addedKey) setCategory(addedKey);
+              return addedKey;
+            }}
+          />
+
           <Text style={sheetStyles.label}>Limit (₹)</Text>
           <View style={sheetStyles.amountBox}>
             <Text style={sheetStyles.rupee}>₹</Text>
@@ -265,6 +289,7 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
               keyboardType="decimal-pad"
               placeholder="0"
               placeholderTextColor={Colors.softStone}
+              autoFocus={isEdit}
             />
           </View>
 
@@ -273,7 +298,7 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
             onPress={handleSave}
             disabled={saving}
           >
-            <Text style={sheetStyles.saveBtnText}>{saving ? 'Saving…' : 'Set Budget'}</Text>
+            <Text style={sheetStyles.saveBtnText}>{saving ? 'Saving…' : isEdit ? 'Save Changes' : 'Set Budget'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -281,48 +306,34 @@ function AddBudgetSheet({ visible, onClose }: { visible: boolean; onClose: () =>
   );
 }
 
-// ── Add Recurring Sheet ───────────────────────
-function AddRecurringSheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const { user } = useAuth();
+// ── Add Checklist Item Sheet ──────────────────
+function AddChecklistItemSheet({ visible, onClose, onAdd }: { visible: boolean; onClose: () => void; onAdd: (name: string, amount: number, category: string, walletId: string) => Promise<void> }) {
   const { wallets } = useWallets();
+  const { categories, addCustomCategory } = useCustomCategories();
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
-  const [frequency, setFrequency] = useState<Frequency>('monthly');
+  const [category, setCategory] = useState<string>('bills');
   const [walletId, setWalletId] = useState('');
   const [saving, setSaving] = useState(false);
+  const [showAddCat, setShowAddCat] = useState(false);
 
-  const defaultWallet = wallets.find((w) => w.isDefault) ?? wallets[0];
-  const selectedWallet = walletId || defaultWallet?.id || '';
+  useEffect(() => {
+    if (wallets.length > 0 && !walletId) {
+      const def = wallets.find(w => w.isDefault)?.id ?? wallets[0]?.id;
+      if (def) setWalletId(def);
+    }
+  }, [wallets]);
 
   const handleSave = async () => {
-    if (!user) return;
     const amt = parseFloat(amount);
-    if (!name.trim()) { Alert.alert('Name required', 'Enter a name for this recurring item.'); return; }
+    if (!name.trim()) { Alert.alert('Name required', 'Enter a name.'); return; }
     if (!amount || isNaN(amt) || amt <= 0) { Alert.alert('Invalid amount', 'Enter an amount greater than 0.'); return; }
-    if (!selectedWallet) { Alert.alert('No wallet', 'Add a wallet first.'); return; }
+    if (!walletId) { Alert.alert('No wallet', 'Select a wallet.'); return; }
 
     setSaving(true);
     try {
-      const nextDue = new Date();
-      if (frequency === 'monthly') nextDue.setMonth(nextDue.getMonth() + 1);
-      else if (frequency === 'weekly') nextDue.setDate(nextDue.getDate() + 7);
-      else nextDue.setFullYear(nextDue.getFullYear() + 1);
-
-      await addDoc(collection(db, 'recurring'), {
-        uid: user.uid,
-        name: name.trim(),
-        amount: amt,
-        frequency,
-        walletId: selectedWallet,
-        nextDueDate: Timestamp.fromDate(nextDue),
-        isPaid: false,
-        isAutoDeduct: false,
-        createdAt: Timestamp.now(),
-      });
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch (e) {}
-      Toast.show({ type: 'success', text1: 'Recurring added ✓', text2: name.trim() });
+      await onAdd(name.trim(), amt, category, walletId);
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch (e) {}
       setName(''); setAmount('');
       onClose();
     } catch (err: any) {
@@ -332,25 +343,25 @@ function AddRecurringSheet({ visible, onClose }: { visible: boolean; onClose: ()
     }
   };
 
+  const selectedWallet = walletId || wallets.find(w => w.isDefault)?.id || wallets[0]?.id || '';
+
   return (
     <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
       <Pressable style={sheetStyles.backdrop} onPress={onClose} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={sheetStyles.wrapper}>
         <View style={sheetStyles.sheet}>
           <View style={sheetStyles.handle} />
-          <Text style={sheetStyles.sheetTitle}>Add Recurring</Text>
+          <Text style={sheetStyles.sheetTitle}>Add Monthly Bill</Text>
 
-          {/* Name */}
-          <Text style={sheetStyles.label}>Name</Text>
+          <Text style={sheetStyles.label}>Item Name</Text>
           <TextInput
             style={sheetStyles.textInput}
             value={name}
             onChangeText={setName}
-            placeholder="Netflix, Rent, Insurance…"
+            placeholder="Electricity, Gym, Rent..."
             placeholderTextColor={Colors.softStone}
           />
 
-          {/* Amount */}
           <Text style={sheetStyles.label}>Amount (₹)</Text>
           <View style={sheetStyles.amountBox}>
             <Text style={sheetStyles.rupee}>₹</Text>
@@ -364,50 +375,62 @@ function AddRecurringSheet({ visible, onClose }: { visible: boolean; onClose: ()
             />
           </View>
 
-          {/* Frequency */}
-          <Text style={sheetStyles.label}>Frequency</Text>
-          <View style={sheetStyles.row}>
-            {(['weekly', 'monthly', 'yearly'] as Frequency[]).map((f) => (
+          <Text style={sheetStyles.label}>Category</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={sheetStyles.catScroll}>
+            <TouchableOpacity
+              style={sheetStyles.catCell}
+              onPress={() => setShowAddCat(true)}
+            >
+              <Text style={sheetStyles.catEmoji}>＋</Text>
+              <Text style={sheetStyles.catLabel}>Add New</Text>
+            </TouchableOpacity>
+            {categories.map((c) => (
               <TouchableOpacity
-                key={f}
-                style={[sheetStyles.pill, frequency === f && sheetStyles.pillActive]}
-                onPress={() => setFrequency(f)}
+                key={c.key}
+                style={[sheetStyles.catCell, category === c.key && sheetStyles.catCellActive]}
+                onPress={() => setCategory(c.key)}
               >
-                <Text style={[sheetStyles.pillText, frequency === f && sheetStyles.pillTextActive]}>
-                  {f.charAt(0).toUpperCase() + f.slice(1)}
+                <Text style={sheetStyles.catEmoji}>{c.emoji}</Text>
+                <Text style={[sheetStyles.catLabel, category === c.key && sheetStyles.catLabelActive]}>
+                  {c.label}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
 
-          {/* Wallet picker */}
-          {wallets.length > 1 && (
-            <>
-              <Text style={sheetStyles.label}>Wallet</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: Spacing.base }}>
-                <View style={sheetStyles.row}>
-                  {wallets.map((w) => (
-                    <TouchableOpacity
-                      key={w.id}
-                      style={[sheetStyles.pill, selectedWallet === w.id && sheetStyles.pillActive]}
-                      onPress={() => setWalletId(w.id)}
-                    >
-                      <Text style={[sheetStyles.pillText, selectedWallet === w.id && sheetStyles.pillTextActive]}>
-                        {w.name}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-            </>
-          )}
+          <AddCategoryModal
+            visible={showAddCat}
+            onClose={() => setShowAddCat(false)}
+            onAdd={async (emoji, label) => {
+              const addedKey = await addCustomCategory(emoji, label);
+              if (addedKey) setCategory(addedKey);
+              return addedKey;
+            }}
+          />
+
+          <Text style={sheetStyles.label}>Charge From Wallet</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: Spacing.base }}>
+            <View style={sheetStyles.row}>
+              {wallets.map((w) => (
+                <TouchableOpacity
+                  key={w.id}
+                  style={[sheetStyles.pill, selectedWallet === w.id && sheetStyles.pillActive]}
+                  onPress={() => setWalletId(w.id)}
+                >
+                  <Text style={[sheetStyles.pillText, selectedWallet === w.id && sheetStyles.pillTextActive]}>
+                    {w.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
 
           <TouchableOpacity
             style={[sheetStyles.saveBtn, saving && { opacity: 0.6 }]}
             onPress={handleSave}
             disabled={saving}
           >
-            <Text style={sheetStyles.saveBtnText}>{saving ? 'Saving…' : 'Add Recurring'}</Text>
+            <Text style={sheetStyles.saveBtnText}>{saving ? 'Saving…' : 'Add Item'}</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -415,108 +438,104 @@ function AddRecurringSheet({ visible, onClose }: { visible: boolean; onClose: ()
   );
 }
 
-const sheetStyles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
-  wrapper: { justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: Colors.polarWhite,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
-    padding: Spacing.xl,
-    paddingBottom: 40,
-  },
-  handle: {
-    width: 40, height: 4,
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.full,
-    alignSelf: 'center',
-    marginBottom: Spacing.lg,
-  },
-  sheetTitle: {
-    ...Typography.heading,
-    fontSize: FontSize['3xl'],
-    color: Colors.carbonBlack,
-    letterSpacing: -1,
-    marginBottom: Spacing.lg,
-  },
-  label: {
-    ...Typography.bodyBold,
-    fontSize: FontSize.sm,
-    color: Colors.mutedStone,
-    marginBottom: Spacing.sm,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg },
-  pill: {
-    borderRadius: Radius.full,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.ghostGray,
-  },
-  pillActive: { backgroundColor: Colors.carbonBlack },
-  pillText: { ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.mutedStone },
-  pillTextActive: { color: Colors.polarWhite },
-  catGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginBottom: Spacing.lg,
-  },
-  catCell: {
-    width: '22%',
-    aspectRatio: 1,
-    borderRadius: Radius.md,
-    backgroundColor: Colors.ghostGray,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  catCellActive: { backgroundColor: Colors.carbonBlack },
-  catEmoji: { fontSize: 20 },
-  catLabel: { ...Typography.body, fontSize: 9, color: Colors.mutedStone },
-  catLabelActive: { color: Colors.polarWhite },
-  amountBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.base,
-    marginBottom: Spacing.lg,
-  },
-  rupee: { ...Typography.heading, fontSize: FontSize['2xl'], color: Colors.mutedStone, marginRight: 4 },
-  amountInput: {
-    flex: 1,
-    ...Typography.heading,
-    fontSize: FontSize['4xl'],
-    color: Colors.carbonBlack,
-    letterSpacing: -1,
-    paddingVertical: Spacing.base,
-  },
-  textInput: {
-    backgroundColor: Colors.ghostGray,
-    borderRadius: Radius.lg,
-    paddingHorizontal: Spacing.base,
-    paddingVertical: Spacing.md,
-    ...Typography.body,
-    fontSize: FontSize.base,
-    color: Colors.carbonBlack,
-    marginBottom: Spacing.lg,
-  },
-  saveBtn: {
-    backgroundColor: Colors.carbonBlack,
-    borderRadius: Radius.full,
-    paddingVertical: Spacing.base,
-    alignItems: 'center',
-    marginTop: Spacing.sm,
-  },
-  saveBtnText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
-});
+// ── Local EMI Approval Sheet ─────────────────
+interface LocalEmiApproveSheetProps {
+  visible: boolean;
+  onClose: () => void;
+  emi: any;
+  onConfirm: (amount: number, walletId: string) => Promise<void>;
+  wallets: any[];
+}
+
+function LocalEmiApproveSheet({ visible, onClose, emi, onConfirm, wallets }: LocalEmiApproveSheetProps) {
+  const [amount, setAmount] = useState('');
+  const [walletId, setWalletId] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (emi) {
+      setAmount(emi.monthlyAmount.toString());
+      setWalletId(emi.walletId);
+    }
+  }, [emi]);
+
+  const handleConfirm = async () => {
+    const amt = parseFloat(amount);
+    if (!amount || isNaN(amt) || amt <= 0) {
+      Alert.alert('Invalid amount', 'Please enter a valid amount.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onConfirm(amt, walletId);
+      onClose();
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!emi) return null;
+  const selectedWallet = walletId || wallets.find(w => w.isDefault)?.id || wallets[0]?.id || '';
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
+      <Pressable style={sheetStyles.backdrop} onPress={onClose} />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={sheetStyles.wrapper}>
+        <View style={sheetStyles.sheet}>
+          <View style={sheetStyles.handle} />
+          <Text style={sheetStyles.sheetTitle}>Approve EMI Payment</Text>
+          <Text style={styles.sheetSubTitle}>
+            {emi.name} — Installment {emi.currentInstallment + 1} of {emi.totalInstallments}
+          </Text>
+
+          <Text style={sheetStyles.label}>Installment Amount (₹)</Text>
+          <View style={sheetStyles.amountBox}>
+            <Text style={sheetStyles.rupee}>₹</Text>
+            <TextInput
+              style={sheetStyles.amountInput}
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              placeholder="0"
+              placeholderTextColor={Colors.softStone}
+            />
+          </View>
+
+          <Text style={sheetStyles.label}>Pay From Wallet</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: Spacing.base }}>
+            <View style={sheetStyles.row}>
+              {wallets.map((w) => (
+                <TouchableOpacity
+                  key={w.id}
+                  style={[sheetStyles.pill, selectedWallet === w.id && sheetStyles.pillActive]}
+                  onPress={() => setWalletId(w.id)}
+                >
+                  <Text style={[sheetStyles.pillText, selectedWallet === w.id && sheetStyles.pillTextActive]}>
+                    {w.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </ScrollView>
+
+          <TouchableOpacity
+            style={[sheetStyles.saveBtn, saving && { opacity: 0.6 }]}
+            onPress={handleConfirm}
+            disabled={saving}
+          >
+            <Text style={sheetStyles.saveBtnText}>{saving ? 'Approving…' : 'Approve Installment'}</Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
 
 // ── EMI Card ─────────────────────────────────
-function EmiCard({ item, walletName }: { item: any; walletName: string }) {
+function EmiCard({ item, walletName, onApprove, isPaidThisMonth }: { item: any; walletName: string; onApprove?: () => void; isPaidThisMonth: boolean }) {
   const cat = getCategoryDef(item.category);
-  const totalPaid = item.currentInstallment * item.monthlyAmount;
   const totalRemaining = (item.totalInstallments - item.currentInstallment) * item.monthlyAmount;
   
   const [deleting, setDeleting] = useState(false);
@@ -549,7 +568,7 @@ function EmiCard({ item, walletName }: { item: any; walletName: string }) {
   return (
     <View style={emiStyles.card}>
       <View style={emiStyles.cardTop}>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={emiStyles.name}>{item.name}</Text>
           <Text style={emiStyles.sub}>
             {cat.emoji} {cat.label} · {walletName}
@@ -562,7 +581,20 @@ function EmiCard({ item, walletName }: { item: any; walletName: string }) {
 
       <View style={emiStyles.amountRow}>
         <Text style={emiStyles.amount}>₹{item.monthlyAmount.toLocaleString('en-IN')}/mo</Text>
-        <Text style={emiStyles.due}>Due Day: {item.startDay}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+          <Text style={emiStyles.due}>Due Day: {item.startDay}</Text>
+          {isPaidThisMonth ? (
+            <View style={emiStyles.paidBadge}>
+              <Text style={emiStyles.paidBadgeText}>✓ Paid</Text>
+            </View>
+          ) : (
+            onApprove && (
+              <TouchableOpacity style={emiStyles.approveBtn} onPress={onApprove}>
+                <Text style={emiStyles.approveBtnText}>Approve</Text>
+              </TouchableOpacity>
+            )
+          )}
+        </View>
       </View>
 
       <View style={emiStyles.progressContainer}>
@@ -576,50 +608,6 @@ function EmiCard({ item, walletName }: { item: any; walletName: string }) {
           </Text>
         </View>
       </View>
-    </View>
-  );
-}
-
-// ── EMI Tab Content ──────────────────────────
-function EmiTabContent({ walletMap }: { walletMap: Record<string, string> }) {
-  const { active, completed, loading } = useEmis();
-
-  if (loading) {
-    return <ActivityIndicator color={Colors.carbonBlack} style={{ marginTop: 40 }} />;
-  }
-
-  if (active.length === 0 && completed.length === 0) {
-    return (
-      <View style={styles.emptyBox}>
-        <Text style={styles.emptyEmoji}>💳</Text>
-        <Text style={styles.emptyTitle}>No EMI plans</Text>
-        <Text style={styles.emptyText}>Track credit card installments and loans.</Text>
-        <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/modals/add-emi')}>
-          <Text style={styles.emptyBtnText}>Add First EMI</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  return (
-    <View>
-      {active.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>Active Installments</Text>
-          {active.map((item) => (
-            <EmiCard key={item.id} item={item} walletName={walletMap[item.walletId] ?? '—'} />
-          ))}
-        </>
-      )}
-
-      {completed.length > 0 && (
-        <>
-          <Text style={[styles.sectionLabel, { marginTop: Spacing.lg, color: Colors.mutedStone }]}>Completed</Text>
-          {completed.map((item) => (
-            <EmiCard key={item.id} item={item} walletName={walletMap[item.walletId] ?? '—'} />
-          ))}
-        </>
-      )}
     </View>
   );
 }
@@ -653,41 +641,358 @@ const emiStyles = StyleSheet.create({
   progressContainer: { gap: Spacing.xs, marginTop: Spacing.xs },
   progressMeta: { flexDirection: 'row', justifyContent: 'space-between' },
   metaText: { ...Typography.bodyMedium, fontSize: 11, color: Colors.mutedStone },
+  approveBtn: {
+    backgroundColor: Colors.limePop,
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  approveBtnText: {
+    ...Typography.bodyBold,
+    fontSize: 10,
+    color: Colors.carbonBlack,
+  },
+  paidBadge: {
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  paidBadgeText: {
+    ...Typography.bodyBold,
+    fontSize: 10,
+    color: Colors.mutedStone,
+  },
 });
+
+// ── Checklist Checkbox Component ─────────────
+function ChecklistCheckbox({ isPaid, onPress }: { isPaid: boolean; onPress: () => void }) {
+  return (
+    <TouchableOpacity
+      style={[
+        styles.checkbox,
+        isPaid ? styles.checkboxChecked : styles.checkboxUnchecked
+      ]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      {isPaid && <Text style={styles.checkMark}>✓</Text>}
+    </TouchableOpacity>
+  );
+}
 
 // ── Main Screen ──────────────────────────────
 export default function BudgetsScreen() {
+  const { user, profile } = useAuth();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<BudgetTab>('budgets');
   const [period, setPeriod] = useState<Period>('monthly');
-  const [showAddBudget, setShowAddBudget] = useState(false);
-  const [showAddRecurring, setShowAddRecurring] = useState(false);
+  const [showBudgetSheet, setShowBudgetSheet] = useState(false);
+  const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null);
+  const [showAddChecklist, setShowAddChecklist] = useState(false);
+  const [showEditChecklist, setShowEditChecklist] = useState(false);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [selectedChecklistItem, setSelectedChecklistItem] = useState<ChecklistItem | null>(null);
 
+  // ── Multi-select state (shared between tabs) ──────────────
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedBudgetIds, setSelectedBudgetIds] = useState<Record<string, boolean>>({});
+  const [selectedChecklistIds, setSelectedChecklistIds] = useState<Record<string, boolean>>({});
+  const { show: showTabBar, hide: hideTabBar, onScroll: tabBarOnScroll } = useTabBarVisibility();
+
+  // Exit select mode when switching tabs
+  useEffect(() => {
+    setSelectMode(false);
+    setSelectedBudgetIds({});
+    setSelectedChecklistIds({});
+  }, [tab]);
+
+  // Hide tab bar in select mode
+  useEffect(() => {
+    if (selectMode) hideTabBar();
+    else showTabBar();
+  }, [selectMode]);
+
+  // Month Tracker
+  const today = new Date();
+  const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const [activeMonth, setActiveMonth] = useState(currentMonthStr);
+
+  const activeMonthDate = useMemo(() => {
+    const [y, m] = activeMonth.split('-').map(Number);
+    return new Date(y, m - 1, 1);
+  }, [activeMonth]);
+
+  const activeMonthLabel = useMemo(() => {
+    return activeMonthDate.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  }, [activeMonthDate]);
+
+  const handlePrevMonth = () => {
+    const [y, m] = activeMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    setActiveMonth(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const handleNextMonth = () => {
+    const [y, m] = activeMonth.split('-').map(Number);
+    const next = new Date(y, m, 1);
+    setActiveMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  // Expected Income State
+  const [editIncome, setEditIncome] = useState(false);
+  const [incomeVal, setIncomeVal] = useState('');
+  const expectedIncome = profile?.expectedIncome ?? 0;
+
+  useEffect(() => {
+    if (expectedIncome) {
+      setIncomeVal(expectedIncome.toString());
+    } else {
+      setIncomeVal('0');
+    }
+  }, [expectedIncome]);
+
+  const saveExpectedIncome = async () => {
+    if (!user) return;
+    const val = parseFloat(incomeVal);
+    if (isNaN(val) || val < 0) {
+      Alert.alert('Invalid income', 'Enter a valid amount.');
+      return;
+    }
+    try {
+      await updateDoc(doc(db, 'users', user.uid), { expectedIncome: val });
+      setEditIncome(false);
+      Toast.show({ type: 'success', text1: 'Expected Income saved ✓' });
+    } catch (e: any) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
+  // Hooks data loading
   const { budgets, loading: bLoading } = useBudgets();
-  const { monthly } = useMonthlyExpenses();
-  const { recurring, overdue, upcoming, loading: rLoading } = useRecurring();
+  const { emis, active: activeEmis, completed: completedEmis, loading: emiLoading } = useEmis();
   const { wallets } = useWallets();
+
+
+  // Checklist Hook
+  const {
+    templates, checklist, loading: clLoading,
+    addTemplate, deleteTemplate, addChecklistItem,
+    updateChecklistItem, deleteChecklistItem, markPaid, unmarkPaid
+  } = useChecklist(activeMonth);
+
+  // EMI approvals details
+  const [emiToApprove, setEmiToApprove] = useState<any | null>(null);
+  const [approvingEmiId, setApprovingEmiId] = useState<string | null>(null);
+
+  // Real-time monthly expenses/income filter inside screen for dynamic months
+  const [actualIncome, setActualIncome] = useState(0);
+  const [actualSpent, setActualSpent] = useState(0);
+  const [monthlyExpenses, setMonthlyExpenses] = useState<Expense[]>([]);
+
+  useEffect(() => {
+    if (!user) return;
+    const [year, month] = activeMonth.split('-').map(Number);
+    const start = new Date(year, month - 1, 1);
+    const end = new Date(year, month, 1);
+
+    const q = query(
+      collection(db, 'expenses'),
+      where('uid', '==', user.uid),
+      where('date', '>=', Timestamp.fromDate(start)),
+      where('date', '<', Timestamp.fromDate(end)),
+      where('type', 'in', ['expense', 'income'])
+    );
+
+    const unsub = onSnapshot(q, (snap) => {
+      const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as Expense));
+      setMonthlyExpenses(items);
+
+      const spent = items.filter(e => e.type === 'expense').reduce((s, e) => s + e.amount, 0);
+      const inc = items.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+      setActualSpent(spent);
+      setActualIncome(inc);
+    });
+    return unsub;
+  }, [user?.uid, activeMonth]);
 
   const walletMap: Record<string, string> = {};
   wallets.forEach((w) => { walletMap[w.id] = w.name; });
 
+  // Map category spent for budgets list
   const catSpend: Record<string, number> = {};
-  monthly.forEach((e) => { catSpend[e.category] = (catSpend[e.category] ?? 0) + e.amount; });
+  monthlyExpenses.filter(e => e.type === 'expense').forEach((e) => {
+    catSpend[e.category] = (catSpend[e.category] ?? 0) + e.amount;
+  });
 
   const totalBudget = budgets.reduce((s, b) => s + b.limit, 0);
-  const totalSpent = budgets.reduce((s, b) => s + (catSpend[b.category] ?? 0), 0);
+  const totalSpentInBudgets = budgets.reduce((s, b) => s + (catSpend[b.category] ?? 0), 0);
+
+  // Checklist statistics
+  const expectedChecklistTotal = checklist.reduce((s, item) => s + item.amount, 0);
+  const paidChecklistTotal = checklist.filter(item => item.isPaid).reduce((s, item) => s + item.amount, 0);
+  const paidChecklistCount = checklist.filter(item => item.isPaid).length;
+
+  // Planned Outflows grouped by category to avoid double-counting overlapping budget envelopes and fixed bills/EMIs
+  const expectedByCategory: Record<string, number> = {};
+  checklist.forEach((item) => {
+    expectedByCategory[item.category] = (expectedByCategory[item.category] ?? 0) + item.amount;
+  });
+  activeEmis.forEach((emi) => {
+    expectedByCategory[emi.category] = (expectedByCategory[emi.category] ?? 0) + emi.monthlyAmount;
+  });
+
+  const allCategoriesSet = new Set<string>([
+    ...budgets.map((b) => b.category),
+    ...Object.keys(expectedByCategory),
+  ]);
+
+  let totalPlannedOutflow = 0;
+  allCategoriesSet.forEach((cat) => {
+    const budgetLimit = budgets.find((b) => b.category === cat)?.limit ?? 0;
+    const expectedCatAmount = expectedByCategory[cat] ?? 0;
+    totalPlannedOutflow += Math.max(budgetLimit, expectedCatAmount);
+  });
+
+  // Planned Savings Formula
+  const plannedSavings = Math.max(0, expectedIncome - totalPlannedOutflow);
+  const actualSavings = Math.max(0, actualIncome - actualSpent);
+
+  const handleApproveEmi = async (emi: any, amount: number, walletId: string) => {
+    if (!user) return;
+    setApprovingEmiId(emi.id);
+    try {
+      const dateNow = Timestamp.now();
+      await addDoc(collection(db, 'expenses'), {
+        uid: user.uid,
+        walletId: walletId,
+        type: 'expense',
+        category: emi.category,
+        amount: amount,
+        note: `${emi.name} (Installment ${emi.currentInstallment + 1}/${emi.totalInstallments})`,
+        date: dateNow,
+        isRecurring: true,
+        recurringId: emi.id,
+        createdAt: dateNow,
+      });
+
+      await updateDoc(doc(db, 'wallets', walletId), {
+        balance: increment(-amount),
+      });
+
+      const nextInstallment = emi.currentInstallment + 1;
+      const isFinished = nextInstallment >= emi.totalInstallments;
+
+      await updateDoc(doc(db, 'emis', emi.id), {
+        currentInstallment: nextInstallment,
+        lastPaidMonth: activeMonth, // prevent multiple approvals in active month
+        active: !isFinished,
+      });
+
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch (e) {}
+      Toast.show({
+        type: 'success',
+        text1: 'Installment paid ✓',
+        text2: `${emi.name} recorded.`,
+      });
+    } catch (err: any) {
+      Alert.alert('Error', err.message);
+    } finally {
+      setApprovingEmiId(null);
+    }
+  };
+
+  const pendingChecklist = checklist.filter(item => !item.isPaid);
+  const paidChecklist = checklist.filter(item => item.isPaid);
+  // Sorted list: unpaid first, then paid
+  const sortedChecklist = [...pendingChecklist, ...paidChecklist];
+
+  // ── Multi-select helpers ──────────────────────────────────
+  const enterSelectMode = (type: 'budget' | 'checklist', id: string) => {
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch (_) {}
+    setSelectMode(true);
+    if (type === 'budget') setSelectedBudgetIds({ [id]: true });
+    else setSelectedChecklistIds({ [id]: true });
+  };
+
+  const toggleBudgetSelect = (id: string) =>
+    setSelectedBudgetIds(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const toggleChecklistSelect = (id: string) =>
+    setSelectedChecklistIds(prev => ({ ...prev, [id]: !prev[id] }));
+
+  const selectedBudgetCount = Object.values(selectedBudgetIds).filter(Boolean).length;
+  const selectedChecklistCount = Object.values(selectedChecklistIds).filter(Boolean).length;
+  const totalSelectedCount = (tab === 'budgets' ? selectedBudgetCount : selectedChecklistCount);
+
+  const handleSelectAll = () => {
+    if (tab === 'budgets') {
+      const all: Record<string, boolean> = {};
+      budgets.forEach(b => { all[b.id] = true; });
+      setSelectedBudgetIds(all);
+    } else {
+      const all: Record<string, boolean> = {};
+      sortedChecklist.forEach(c => { all[c.id] = true; });
+      setSelectedChecklistIds(all);
+    }
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedBudgetIds({});
+    setSelectedChecklistIds({});
+  };
+
+  const handleDeleteSelected = async () => {
+    if (totalSelectedCount === 0) return;
+    try {
+      if (tab === 'budgets') {
+        const ids = Object.keys(selectedBudgetIds).filter(id => selectedBudgetIds[id]);
+        const batch = writeBatch(db);
+        ids.forEach(id => batch.delete(doc(db, 'budgets', id)));
+        await batch.commit();
+        Toast.show({ type: 'success', text1: `${ids.length} budget${ids.length > 1 ? 's' : ''} deleted ✓` });
+      } else {
+        const ids = Object.keys(selectedChecklistIds).filter(id => selectedChecklistIds[id]);
+        const batch = writeBatch(db);
+        
+        for (const id of ids) {
+          const item = checklist.find(c => c.id === id);
+          if (item) {
+            if (item.isPaid) {
+              if (item.expenseId) {
+                batch.delete(doc(db, 'expenses', item.expenseId));
+              }
+              batch.update(doc(db, 'wallets', item.walletId), {
+                balance: increment(item.amount),
+              });
+            }
+            batch.delete(doc(db, 'checklist_items', id));
+          }
+        }
+        
+        await batch.commit();
+        Toast.show({ type: 'success', text1: `${ids.length} item${ids.length > 1 ? 's' : ''} deleted ✓` });
+      }
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch (_) {}
+      exitSelectMode();
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Delete failed', text2: err.message });
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>
-          {tab === 'budgets' ? 'Budgets' : tab === 'recurring' ? 'Recurring' : 'EMIs'}
+          {tab === 'budgets' ? 'Budgets' : tab === 'checklist' ? 'To-Do' : 'EMIs'}
         </Text>
         <TouchableOpacity
           style={styles.addBtn}
           onPress={() => {
-            if (tab === 'budgets') setShowAddBudget(true);
-            else if (tab === 'recurring') setShowAddRecurring(true);
+            if (tab === 'budgets') { setSelectedBudget(null); setShowBudgetSheet(true); }
+            else if (tab === 'checklist') setShowAddChecklist(true);
             else router.push('/modals/add-emi');
           }}
         >
@@ -702,15 +1007,15 @@ export default function BudgetsScreen() {
           onPress={() => setTab('budgets')}
         >
           <Text style={[styles.subTabText, tab === 'budgets' && styles.subTabTextActive]}>
-            Budgets
+            Planning & Limits
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.subTab, tab === 'recurring' && styles.subTabActive]}
-          onPress={() => setTab('recurring')}
+          style={[styles.subTab, tab === 'checklist' && styles.subTabActive]}
+          onPress={() => setTab('checklist')}
         >
-          <Text style={[styles.subTabText, tab === 'recurring' && styles.subTabTextActive]}>
-            Recurring
+          <Text style={[styles.subTabText, tab === 'checklist' && styles.subTabTextActive]}>
+            To-Do Checklist
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -723,41 +1028,96 @@ export default function BudgetsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* ── BUDGETS TAB ── */}
+      {/* Month Selector for Checklist & budgets tracking */}
+      <View style={styles.monthSelectorRow}>
+        <TouchableOpacity onPress={handlePrevMonth} style={styles.monthNavBtn}>
+          <Text style={styles.monthNavText}>‹</Text>
+        </TouchableOpacity>
+        <Text style={styles.monthLabelText}>{activeMonthLabel}</Text>
+        <TouchableOpacity onPress={handleNextMonth} style={styles.monthNavBtn}>
+          <Text style={styles.monthNavText}>›</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        onScroll={tabBarOnScroll}
+        scrollEventThrottle={16}
+      >
+        {/* ── BUDGETS TAB (PLANNING & LIMITS) ── */}
         {tab === 'budgets' && (
           <>
-            {/* Period filter */}
-            <View style={styles.periodRow}>
-              {(['weekly', 'monthly'] as Period[]).map((p) => (
-                <TouchableOpacity
-                  key={p}
-                  style={[styles.periodPill, period === p && styles.periodPillActive]}
-                  onPress={() => setPeriod(p)}
-                >
-                  <Text style={[styles.periodPillText, period === p && styles.periodPillTextActive]}>
-                    {p.charAt(0).toUpperCase() + p.slice(1)}
-                  </Text>
+            {/* Income Planning Overview */}
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryLabel}>Expected Monthly Income</Text>
+              {editIncome ? (
+                <View style={styles.incomeEditRow}>
+                  <Text style={styles.incomeRupee}>₹</Text>
+                  <TextInput
+                    style={styles.incomeInput}
+                    value={incomeVal}
+                    onChangeText={setIncomeVal}
+                    keyboardType="numeric"
+                    autoFocus
+                    onBlur={saveExpectedIncome}
+                    onSubmitEditing={saveExpectedIncome}
+                  />
+                  <TouchableOpacity onPress={saveExpectedIncome} style={styles.incomeSaveBtn}>
+                    <Text style={{ fontSize: 16 }}>✓</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity onPress={() => setEditIncome(true)} style={styles.incomeDisplayRow}>
+                  <Text style={styles.summaryAmount}>₹{expectedIncome.toLocaleString('en-IN')}</Text>
+                  <Text style={styles.editPen}>✏️</Text>
                 </TouchableOpacity>
-              ))}
+              )}
+
+              {/* Planning Breakdown stats */}
+              <View style={styles.breakdownRow}>
+                <View style={styles.breakdownCell}>
+                  <Text style={styles.breakdownTitle}>Planned Limits</Text>
+                  <Text style={styles.breakdownValue}>₹{totalBudget.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={styles.breakdownCell}>
+                  <Text style={styles.breakdownTitle}>Expected Bills</Text>
+                  <Text style={styles.breakdownValue}>₹{expectedChecklistTotal.toLocaleString('en-IN')}</Text>
+                </View>
+                <View style={styles.breakdownCell}>
+                  <Text style={styles.breakdownTitle}>Planned Savings</Text>
+                  <Text style={[styles.breakdownValue, { color: Colors.incomeText }]}>
+                    ₹{plannedSavings.toLocaleString('en-IN')}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Compare Actual vs Planned */}
+              <View style={styles.actualSavingsCard}>
+                <Text style={styles.actualSavingsTitle}>Actual Progress this Month</Text>
+                <View style={styles.actualSavingsRow}>
+                  <View>
+                    <Text style={styles.actualSavingsLabel}>Income (Actual)</Text>
+                    <Text style={styles.actualSavingsVal}>₹{actualIncome.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.actualSavingsLabel}>Spent (Actual)</Text>
+                    <Text style={styles.actualSavingsVal}>₹{actualSpent.toLocaleString('en-IN')}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.actualSavingsLabel}>Savings (Actual)</Text>
+                    <Text style={[styles.actualSavingsVal, { color: Colors.incomeText }]}>
+                      ₹{actualSavings.toLocaleString('en-IN')}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
 
-            {/* Summary card */}
-            {budgets.length > 0 && (
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryLabel}>Total Budget</Text>
-                <Text style={styles.summaryAmount}>₹{totalBudget.toLocaleString('en-IN')}</Text>
-                <ProgressBar value={totalSpent} max={totalBudget} />
-                <Text style={styles.summaryMeta}>
-                  ₹{totalSpent.toLocaleString('en-IN')} spent ·{' '}
-                  ₹{Math.max(0, totalBudget - totalSpent).toLocaleString('en-IN')} remaining
-                </Text>
-              </View>
-            )}
+            <Text style={styles.sectionLabel}>Category Spending Limits</Text>
 
             {bLoading ? (
               <>
-                <BudgetCardSkeleton />
                 <BudgetCardSkeleton />
                 <BudgetCardSkeleton />
               </>
@@ -766,7 +1126,7 @@ export default function BudgetsScreen() {
                 <Text style={styles.emptyEmoji}>📋</Text>
                 <Text style={styles.emptyTitle}>No budgets set</Text>
                 <Text style={styles.emptyText}>Tap + Add to set a spending limit per category.</Text>
-                <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAddBudget(true)}>
+                <TouchableOpacity style={styles.emptyBtn} onPress={() => { setSelectedBudget(null); setShowBudgetSheet(true); }}>
                   <Text style={styles.emptyBtnText}>Set First Budget</Text>
                 </TouchableOpacity>
               </View>
@@ -775,15 +1135,37 @@ export default function BudgetsScreen() {
                 const spent = catSpend[b.category] ?? 0;
                 const over = spent > b.limit;
                 const cat = getCategoryDef(b.category);
+                const isBudgetSelected = !!selectedBudgetIds[b.id];
                 return (
-                  <View key={b.id} style={styles.budgetCard}>
+                  <TouchableOpacity
+                    key={b.id}
+                    style={[styles.budgetCard, isBudgetSelected && styles.cardSelected]}
+                    onPress={() => {
+                      if (selectMode) { toggleBudgetSelect(b.id); }
+                      else { setSelectedBudget(b); setShowBudgetSheet(true); }
+                    }}
+                    onLongPress={() => enterSelectMode('budget', b.id)}
+                    delayLongPress={350}
+                    activeOpacity={0.75}
+                  >
+                    {selectMode && (
+                      <View style={[
+                        styles.selectionCheckbox,
+                        isBudgetSelected && styles.selectionCheckboxActive,
+                      ]}>
+                        {isBudgetSelected && <Text style={styles.selectionCheckmark}>✓</Text>}
+                      </View>
+                    )}
                     <View style={styles.budgetCardTop}>
                       <Text style={styles.budgetCatLabel}>
                         {cat.emoji} {cat.label}
                       </Text>
-                      <Text style={[styles.budgetAmounts, over && { color: Colors.powerPink }]}>
-                        ₹{spent.toLocaleString('en-IN')} / ₹{b.limit.toLocaleString('en-IN')}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: Spacing.sm }}>
+                        <Text style={[styles.budgetAmounts, over && { color: Colors.powerPink }]}>
+                          ₹{spent.toLocaleString('en-IN')} / ₹{b.limit.toLocaleString('en-IN')}
+                        </Text>
+                        {!selectMode && <Text style={{ fontSize: 12, color: Colors.mutedStone }}>✏️</Text>}
+                      </View>
                     </View>
                     <ProgressBar
                       value={spent}
@@ -795,6 +1177,93 @@ export default function BudgetsScreen() {
                         ⚠ Over by ₹{(spent - b.limit).toLocaleString('en-IN')}
                       </Text>
                     )}
+                  </TouchableOpacity>
+                );
+              })
+            )}
+          </>
+        )}
+
+        {/* ── TO-DO CHECKLIST TAB ── */}
+        {tab === 'checklist' && (
+          <>
+            {/* Checklist Statistics */}
+            {checklist.length > 0 && (
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryLabel}>CHECKLIST PROGRESS</Text>
+                <Text style={styles.summaryAmount}>
+                  ₹{paidChecklistTotal.toLocaleString('en-IN')} / ₹{expectedChecklistTotal.toLocaleString('en-IN')}
+                </Text>
+                <ProgressBar value={paidChecklistTotal} max={expectedChecklistTotal} color={Colors.income} />
+                <Text style={styles.summaryMeta}>
+                  {paidChecklistCount} of {checklist.length} items paid
+                </Text>
+              </View>
+            )}
+
+            {clLoading ? (
+              <ActivityIndicator color={Colors.carbonBlack} style={{ marginTop: 40 }} />
+            ) : checklist.length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Text style={styles.emptyEmoji}>🔄</Text>
+                <Text style={styles.emptyTitle}>Checklist is empty</Text>
+                <Text style={styles.emptyText}>Tap + Add to record a monthly bill, or use the Templates button to set up recurring defaults.</Text>
+              </View>
+            ) : (
+              sortedChecklist.map((item) => {
+                const cat = getCategoryDef(item.category);
+                const isChecklistSelected = !!selectedChecklistIds[item.id];
+                return (
+                  <View
+                    key={item.id}
+                    style={[styles.checkRow, isChecklistSelected && styles.cardSelected]}
+                  >
+                    {selectMode ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.selectionCheckbox,
+                          isChecklistSelected && styles.selectionCheckboxActive,
+                        ]}
+                        onPress={() => toggleChecklistSelect(item.id)}
+                      >
+                        {isChecklistSelected && <Text style={styles.selectionCheckmark}>✓</Text>}
+                      </TouchableOpacity>
+                    ) : (
+                      <ChecklistCheckbox
+                        isPaid={item.isPaid}
+                        onPress={() => {
+                          try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch(e){}
+                          if (item.isPaid) unmarkPaid(item); else markPaid(item);
+                        }}
+                      />
+                    )}
+                    <TouchableOpacity
+                      style={[styles.checkCard, item.isPaid && styles.checkCardPaid]}
+                      onPress={() => {
+                        if (selectMode) { toggleChecklistSelect(item.id); }
+                        else { setSelectedChecklistItem(item); setShowEditChecklist(true); }
+                      }}
+                      onLongPress={() => enterSelectMode('checklist', item.id)}
+                      delayLongPress={350}
+                    >
+                      <View style={styles.checkLeft}>
+                        <View style={[styles.checkEmojiBox, item.isPaid && { backgroundColor: Colors.ghostGray }]}>
+                          <Text style={{ fontSize: 18 }}>{cat.emoji}</Text>
+                        </View>
+                        <View>
+                          <Text style={[styles.checkName, item.isPaid && styles.checkNamePaid]}>
+                            {item.name}
+                          </Text>
+                          <Text style={styles.checkWallet}>{walletMap[item.walletId] ?? 'Wallet'}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.checkRight}>
+                        <Text style={[styles.checkAmount, item.isPaid && { color: Colors.mutedStone }]}>
+                          ₹{item.amount.toLocaleString('en-IN')}
+                        </Text>
+                        {item.isPaid && <Text style={styles.paidStamp}>✓ Paid</Text>}
+                      </View>
+                    </TouchableOpacity>
                   </View>
                 );
               })
@@ -802,56 +1271,138 @@ export default function BudgetsScreen() {
           </>
         )}
 
-        {/* ── RECURRING TAB ── */}
-        {tab === 'recurring' && (
-          <>
-            {rLoading ? (
+        {/* ── EMIS TAB ── */}
+        {tab === 'emis' && (
+          <View>
+            {emiLoading ? (
               <ActivityIndicator color={Colors.carbonBlack} style={{ marginTop: 40 }} />
-            ) : recurring.length === 0 ? (
+            ) : activeEmis.length === 0 && completedEmis.length === 0 ? (
               <View style={styles.emptyBox}>
-                <Text style={styles.emptyEmoji}>🔄</Text>
-                <Text style={styles.emptyTitle}>No recurring items</Text>
-                <Text style={styles.emptyText}>Track subscriptions and regular bills.</Text>
-                <TouchableOpacity style={styles.emptyBtn} onPress={() => setShowAddRecurring(true)}>
-                  <Text style={styles.emptyBtnText}>Add First Recurring</Text>
+                <Text style={styles.emptyEmoji}>💳</Text>
+                <Text style={styles.emptyTitle}>No EMI plans</Text>
+                <Text style={styles.emptyText}>Track credit card installments and loans.</Text>
+                <TouchableOpacity style={styles.emptyBtn} onPress={() => router.push('/modals/add-emi')}>
+                  <Text style={styles.emptyBtnText}>Add First EMI</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
-                {overdue.length > 0 && (
+                {activeEmis.length > 0 && (
                   <>
-                    <Text style={[styles.sectionLabel, { color: Colors.powerPink }]}>Overdue</Text>
-                    {overdue.map((r) => (
-                      <RecurringCard key={r.id} item={r} walletName={walletMap[r.walletId] ?? '—'} />
-                    ))}
+                    <Text style={styles.sectionLabel}>Active Installments</Text>
+                    {activeEmis.map((item) => {
+                      const isPaidThisMonth = item.lastPaidMonth === activeMonth;
+                      return (
+                        <EmiCard
+                          key={item.id}
+                          item={item}
+                          walletName={walletMap[item.walletId] ?? '—'}
+                          isPaidThisMonth={isPaidThisMonth}
+                          onApprove={!isPaidThisMonth ? () => setEmiToApprove(item) : undefined}
+                        />
+                      );
+                    })}
                   </>
                 )}
-                {upcoming.length > 0 && (
+
+                {completedEmis.length > 0 && (
                   <>
-                    <Text style={styles.sectionLabel}>Due Soon</Text>
-                    {upcoming.map((r) => (
-                      <RecurringCard key={r.id} item={r} walletName={walletMap[r.walletId] ?? '—'} />
+                    <Text style={[styles.sectionLabel, { marginTop: Spacing.lg, color: Colors.mutedStone }]}>
+                      Completed
+                    </Text>
+                    {completedEmis.map((item) => (
+                      <EmiCard
+                        key={item.id}
+                        item={item}
+                        walletName={walletMap[item.walletId] ?? '—'}
+                        isPaidThisMonth={true}
+                      />
                     ))}
                   </>
                 )}
               </>
             )}
-          </>
-        )}
-
-        {/* ── EMIS TAB ── */}
-        {tab === 'emis' && (
-          <EmiTabContent walletMap={walletMap} />
+          </View>
         )}
       </ScrollView>
 
-      {/* Modals */}
-      <AddBudgetSheet visible={showAddBudget} onClose={() => setShowAddBudget(false)} />
-      <AddRecurringSheet visible={showAddRecurring} onClose={() => setShowAddRecurring(false)} />
+      {/* Modals & Sheets */}
+      <BudgetSheet
+        visible={showBudgetSheet}
+        onClose={() => { setShowBudgetSheet(false); setSelectedBudget(null); }}
+        existingBudget={selectedBudget}
+      />
+      
+      <AddChecklistItemSheet
+        visible={showAddChecklist}
+        onClose={() => setShowAddChecklist(false)}
+        onAdd={addTemplate}
+      />
+
+      <EditChecklistItemSheet
+        visible={showEditChecklist}
+        onClose={() => {
+          setShowEditChecklist(false);
+          setSelectedChecklistItem(null);
+        }}
+        item={selectedChecklistItem}
+        onUpdate={updateChecklistItem}
+        onDelete={deleteChecklistItem}
+      />
+
+      <ManageTemplatesSheet
+        visible={showTemplates}
+        onClose={() => setShowTemplates(false)}
+        templates={templates}
+        onAdd={addTemplate}
+        onDelete={deleteTemplate}
+      />
+
+      <LocalEmiApproveSheet
+        visible={!!emiToApprove}
+        onClose={() => setEmiToApprove(null)}
+        emi={emiToApprove}
+        onConfirm={async (amount, walletId) => {
+          if (emiToApprove) {
+            await handleApproveEmi(emiToApprove, amount, walletId);
+          }
+        }}
+        wallets={wallets}
+      />
+
+      {/* ── Floating Multi-Select Bar ── */}
+      {selectMode && (tab === 'budgets' || tab === 'checklist') && (
+        <View style={[styles.bulkBar, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.bulkBarInner}>
+            <View style={styles.bulkLeft}>
+              <View style={styles.bulkBadge}>
+                <Text style={styles.bulkBadgeText}>{totalSelectedCount}</Text>
+              </View>
+              <Text style={styles.bulkCountLabel}>
+                {totalSelectedCount === 0 ? 'Hold to select' : `item${totalSelectedCount > 1 ? 's' : ''} selected`}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity onPress={handleSelectAll} style={styles.bulkActionBtn}>
+                <Text style={styles.bulkActionBtnText}>All</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={exitSelectMode} style={styles.bulkCancelBtn}>
+                <Text style={styles.bulkCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              {totalSelectedCount > 0 && (
+                <TouchableOpacity onPress={handleDeleteSelected} style={styles.bulkDeleteBtn}>
+                  <Text style={styles.bulkDeleteBtnText}>🗑 Delete</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
+// ── Styles ───────────────────────────────────
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.canvasIce },
   header: {
@@ -879,7 +1430,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
-    marginBottom: Spacing.base,
+    marginBottom: Spacing.sm,
   },
   subTab: {
     borderRadius: Radius.full,
@@ -890,7 +1441,30 @@ const styles = StyleSheet.create({
   subTabActive: { backgroundColor: Colors.carbonBlack },
   subTabText: { ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.mutedStone },
   subTabTextActive: { color: Colors.polarWhite },
-  content: { paddingHorizontal: Spacing.lg, paddingBottom: 100 },
+  monthSelectorRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    marginVertical: Spacing.sm,
+  },
+  monthNavBtn: {
+    width: 32, height: 32,
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  monthNavText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.carbonBlack,
+  },
+  monthLabelText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.md,
+    color: Colors.carbonBlack,
+  },
+  content: { paddingHorizontal: Spacing.lg, paddingBottom: 120 },
   periodRow: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.base },
   periodPill: {
     borderRadius: Radius.full,
@@ -903,7 +1477,7 @@ const styles = StyleSheet.create({
   periodPillTextActive: { color: Colors.polarWhite },
   summaryCard: {
     backgroundColor: Colors.creamCard,
-    borderRadius: Radius['4xl'],
+    borderRadius: Radius['2xl'],
     padding: Spacing.xl,
     marginBottom: Spacing.lg,
     gap: Spacing.sm,
@@ -911,7 +1485,7 @@ const styles = StyleSheet.create({
   summaryLabel: { ...Typography.bodyMedium, fontSize: FontSize.base, color: Colors.mutedStone },
   summaryAmount: {
     ...Typography.heading,
-    fontSize: FontSize['6xl'],
+    fontSize: FontSize['5xl'],
     color: Colors.carbonBlack,
     letterSpacing: -1.5,
   },
@@ -957,4 +1531,379 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   emptyBtnText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
+  
+  // Income edit styles
+  incomeDisplayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  editPen: {
+    fontSize: 16,
+    opacity: 0.6,
+  },
+  incomeEditRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+  },
+  incomeRupee: {
+    ...Typography.heading,
+    fontSize: FontSize['2xl'],
+    color: Colors.mutedStone,
+    marginRight: 4,
+  },
+  incomeInput: {
+    flex: 1,
+    ...Typography.heading,
+    fontSize: FontSize['3xl'],
+    color: Colors.carbonBlack,
+    paddingVertical: 4,
+  },
+  incomeSaveBtn: {
+    padding: Spacing.sm,
+  },
+  
+  // Planning Breakdown Table
+  breakdownRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+    paddingTop: Spacing.md,
+  },
+  breakdownCell: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
+  breakdownTitle: {
+    ...Typography.bodyMedium,
+    fontSize: 10,
+    color: Colors.mutedStone,
+    textTransform: 'uppercase',
+  },
+  breakdownValue: {
+    ...Typography.heading,
+    fontSize: FontSize.md,
+    color: Colors.carbonBlack,
+    marginTop: 2,
+  },
+  
+  // Actual progress card
+  actualSavingsCard: {
+    backgroundColor: 'rgba(255,255,255,0.7)',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+  },
+  actualSavingsTitle: {
+    ...Typography.bodyBold,
+    fontSize: 11,
+    color: Colors.mutedStone,
+    textTransform: 'uppercase',
+    marginBottom: Spacing.sm,
+  },
+  actualSavingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  actualSavingsLabel: {
+    ...Typography.body,
+    fontSize: 10,
+    color: Colors.mutedStone,
+  },
+  actualSavingsVal: {
+    ...Typography.heading,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
+    marginTop: 2,
+  },
+
+  // Checklist specific styles
+  checklistActionBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginBottom: Spacing.md,
+  },
+  outlineActionBtn: {
+    borderWidth: 1,
+    borderColor: Colors.carbonBlack,
+    borderRadius: Radius.full,
+    paddingHorizontal: 16,
+    paddingVertical: Spacing.sm,
+  },
+  outlineActionBtnText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: Colors.carbonBlack,
+  },
+  checkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  checkCard: {
+    flex: 1,
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.ghostGray,
+    padding: Spacing.base,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  checkCardPaid: {
+    flex: 1,
+    backgroundColor: Colors.polarWhite,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.ghostGray,
+    padding: Spacing.base,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    opacity: 0.65,
+  },
+  checkNamePaid: {
+    textDecorationLine: 'line-through' as const,
+    color: Colors.mutedStone,
+  },
+  paidStamp: {
+    ...Typography.bodyBold,
+    fontSize: 10,
+    color: Colors.mutedStone,
+    marginTop: 2,
+  },
+  checkLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.base,
+  },
+  checkEmojiBox: {
+    width: 38, height: 38,
+    backgroundColor: Colors.creamCard,
+    borderRadius: Radius.full,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkName: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
+  },
+  checkWallet: {
+    ...Typography.body,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+    marginTop: 2,
+  },
+  checkRight: {
+    alignItems: 'flex-end',
+  },
+  checkAmount: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
+  },
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxUnchecked: {
+    borderColor: Colors.mutedStone,
+    backgroundColor: 'transparent',
+  },
+  checkboxChecked: {
+    borderColor: Colors.limePop,
+    backgroundColor: Colors.limePop,
+  },
+  checkMark: {
+    color: Colors.carbonBlack,
+    fontSize: FontSize.sm,
+    fontWeight: '900',
+  },
+  sheetSubTitle: {
+    ...Typography.bodyMedium,
+    fontSize: FontSize.base,
+    color: Colors.mutedStone,
+    marginTop: 4,
+    marginBottom: Spacing.lg,
+  },
+  // ── Multi-select styles ────────────────────────────────
+  cardSelected: {
+    borderWidth: 2,
+    borderColor: Colors.periwinkle,
+    backgroundColor: '#EEF0FF',
+  },
+  selectionCheckbox: {
+    width: 24, height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.softStone,
+    backgroundColor: Colors.polarWhite,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    marginRight: Spacing.sm,
+    flexShrink: 0,
+  },
+  selectionCheckboxActive: {
+    backgroundColor: Colors.periwinkle,
+    borderColor: Colors.periwinkle,
+  },
+  selectionCheckmark: {
+    ...Typography.bodyBold,
+    fontSize: 13,
+    color: Colors.polarWhite,
+  },
+  bulkBar: {
+    position: 'absolute' as const,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: Colors.carbonBlack,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.base,
+  },
+  bulkBarInner: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  bulkLeft: { flexDirection: 'row' as const, alignItems: 'center' as const, gap: Spacing.sm },
+  bulkBadge: {
+    width: 28, height: 28,
+    borderRadius: 14,
+    backgroundColor: Colors.periwinkle,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  bulkBadgeText: { ...Typography.bodyBold, fontSize: 13, color: Colors.polarWhite },
+  bulkCountLabel: { ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.polarWhite },
+  bulkActionBtn: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+  },
+  bulkActionBtnText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.polarWhite },
+  bulkCancelBtn: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+  },
+  bulkCancelBtnText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.polarWhite },
+  bulkDeleteBtn: {
+    backgroundColor: Colors.powerPink,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+  },
+  bulkDeleteBtnText: { ...Typography.bodyBold, fontSize: FontSize.sm, color: Colors.polarWhite },
+});
+
+// ── Shared Add/Edit Sheet styles ───────────────
+const sheetStyles = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' },
+  wrapper: { justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: Colors.polarWhite,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    padding: Spacing.xl,
+    paddingBottom: 40,
+  },
+  handle: {
+    width: 40, height: 4,
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    alignSelf: 'center',
+    marginBottom: Spacing.lg,
+  },
+  sheetTitle: {
+    ...Typography.heading,
+    fontSize: FontSize['3xl'],
+    color: Colors.carbonBlack,
+    letterSpacing: -1,
+    marginBottom: Spacing.lg,
+  },
+  label: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: Colors.mutedStone,
+    marginBottom: Spacing.sm,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  row: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginBottom: Spacing.lg },
+  pill: {
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.ghostGray,
+  },
+  pillActive: { backgroundColor: Colors.carbonBlack },
+  pillText: { ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.mutedStone },
+  pillTextActive: { color: Colors.polarWhite },
+  catScroll: {
+    flexDirection: 'row',
+    marginBottom: Spacing.lg,
+  },
+  catCell: {
+    width: 76,
+    height: 76,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.ghostGray,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+    gap: 4,
+  },
+  catCellActive: { backgroundColor: Colors.carbonBlack },
+  catEmoji: { fontSize: 20 },
+  catLabel: { ...Typography.body, fontSize: 9, color: Colors.mutedStone },
+  catLabelActive: { color: Colors.polarWhite },
+  amountBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.lg,
+    paddingHorizontal: Spacing.base,
+    marginBottom: Spacing.lg,
+  },
+  rupee: { ...Typography.heading, fontSize: FontSize['2xl'], color: Colors.mutedStone, marginRight: 4 },
+  amountInput: {
+    flex: 1,
+    ...Typography.heading,
+    fontSize: FontSize['4xl'],
+    color: Colors.carbonBlack,
+    letterSpacing: -1,
+    paddingVertical: Spacing.base,
+  },
+  textInput: {
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.lg,
+    paddingHorizontal: Spacing.base,
+    paddingVertical: Spacing.md,
+    ...Typography.body,
+    fontSize: FontSize.base,
+    color: Colors.carbonBlack,
+    marginBottom: Spacing.lg,
+  },
+  saveBtn: {
+    backgroundColor: Colors.carbonBlack,
+    borderRadius: Radius.full,
+    paddingVertical: Spacing.base,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+  },
+  saveBtnText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
 });

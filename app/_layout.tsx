@@ -7,9 +7,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import Toast from 'react-native-toast-message';
 import { useFonts, Montserrat_900Black } from '@expo-google-fonts/montserrat';
 import { Inter_400Regular, Inter_500Medium, Inter_700Bold } from '@expo-google-fonts/inter';
-import { View, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, ActivityIndicator, Platform, StyleSheet } from 'react-native';
 import { AuthProvider, useAuth } from '../context/AuthContext';
-import { Colors } from '../constants/theme';
+import { TabBarVisibilityProvider } from '../context/TabBarVisibilityContext';
+import { Colors, FontSize, Radius, Spacing, Typography } from '../constants/theme';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 
@@ -129,41 +130,96 @@ export default function RootLayout() {
     );
   }
 
+  const toastConfig = {
+    success: ({ text1, text2 }: any) => (
+      <View style={toastStyles.base}>
+        <Text style={toastStyles.text1}>{text1}</Text>
+        {text2 ? <Text style={toastStyles.text2}>{text2}</Text> : null}
+      </View>
+    ),
+    error: ({ text1, text2 }: any) => (
+      <View style={[toastStyles.base, toastStyles.error]}>
+        <Text style={toastStyles.text1}>{text1}</Text>
+        {text2 ? <Text style={toastStyles.text2}>{text2}</Text> : null}
+      </View>
+    ),
+    info: ({ text1, text2 }: any) => (
+      <View style={[toastStyles.base, toastStyles.info]}>
+        <Text style={toastStyles.text1}>{text1}</Text>
+        {text2 ? <Text style={toastStyles.text2}>{text2}</Text> : null}
+      </View>
+    ),
+  };
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <AuthProvider>
-          <AuthGuard>
-            <StatusBar style="dark" />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(auth)" />
-              <Stack.Screen name="onboarding" />
-              <Stack.Screen name="(tabs)" />
-              <Stack.Screen
-                name="modals/add-expense"
-                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-              />
-              <Stack.Screen
-                name="modals/add-emi"
-                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-              />
-              <Stack.Screen
-                name="modals/edit-expense"
-                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-              />
-              <Stack.Screen
-                name="modals/add-wallet"
-                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-              />
-              <Stack.Screen
-                name="modals/wallet-report"
-                options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
-              />
-            </Stack>
-          </AuthGuard>
-          <Toast />
+          <TabBarVisibilityProvider>
+            <AuthGuard>
+              <StatusBar style="dark" />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="(auth)" />
+                <Stack.Screen name="onboarding" />
+                <Stack.Screen name="(tabs)" />
+                <Stack.Screen
+                  name="modals/add-expense"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="modals/add-emi"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="modals/edit-expense"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="modals/add-wallet"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+                <Stack.Screen
+                  name="modals/wallet-report"
+                  options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+                />
+              </Stack>
+            </AuthGuard>
+            <Toast config={toastConfig} />
+          </TabBarVisibilityProvider>
         </AuthProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
 }
+
+const toastStyles = StyleSheet.create({
+  base: {
+    width: '88%',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 30,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  error: {
+    backgroundColor: '#FF3B30',
+  },
+  info: {
+    backgroundColor: '#007AFF',
+  },
+  text1: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 14,
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  text2: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.75)',
+  },
+});

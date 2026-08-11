@@ -1,12 +1,12 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, ActivityIndicator, Dimensions, Alert, Modal, TouchableWithoutFeedback,
+  StyleSheet, ActivityIndicator, Dimensions, Alert, Modal, TouchableWithoutFeedback, Animated,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import Svg, { Polyline, Circle, Line, Polygon, Path, Text as SvgText } from 'react-native-svg';
-import { doc, deleteDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, deleteDoc, updateDoc, increment, writeBatch, collection } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { useExpenses } from '../../hooks/useExpenses';
 import { useWallets } from '../../hooks/useWallets';
@@ -17,6 +17,8 @@ import {
 import { exportToExcel } from '../../lib/export';
 import Toast from 'react-native-toast-message';
 import { useAuth } from '../../context/AuthContext';
+import { useTabBarVisibility } from '../../context/TabBarVisibilityContext';
+import * as Haptics from 'expo-haptics';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - Spacing.lg * 2 - 32;
@@ -150,23 +152,47 @@ export default function ReportsScreen() {
   const [period, setPeriod] = useState<Period>('month');
   const { expenses, loading } = useExpenses(500);
   const { wallets } = useWallets();
+  const insets = useSafeAreaInsets();
 
-  // Custom date selection filter
-  const [customFilterDate, setCustomFilterDate] = useState(new Date());
+  // Multi-select state
+  const [isSelectMode, setIsSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Record<string, boolean>>({});
+  const { onScroll: tabBarOnScroll, show: showTabBar, hide: hideTabBar } = useTabBarVisibility();
+  const selectedCount = Object.values(selectedIds).filter(Boolean).length;
+
+  // Forcefully hide tab bar in select mode; restore when leaving
+  useEffect(() => {
+    if (isSelectMode) {
+      hideTabBar();
+    } else {
+      showTabBar();
+      setSelectedIds({});
+    }
+  }, [isSelectMode]);
+
+  const exitSelectMode = () => setIsSelectMode(false);
+
+  // Custom date selection filter range
+  const [customFromDate, setCustomFromDate] = useState<Date | null>(null);
+  const [customToDate, setCustomToDate] = useState<Date | null>(null);
+  const [targetingDate, setTargetingDate] = useState<'from' | 'to'>('from');
   const [showDatePicker, setShowDatePicker] = useState(false);
 
-  const [pickerYear, setPickerYear] = useState(customFilterDate.getFullYear());
-  const [pickerMonth, setPickerMonth] = useState(customFilterDate.getMonth());
-  const [pickerDay, setPickerDay] = useState(customFilterDate.getDate());
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(new Date().getMonth());
+  const [pickerDay, setPickerDay] = useState(new Date().getDate());
 
-  // Sync date picker states when opened
-  useEffect(() => {
-    if (showDatePicker) {
-      setPickerYear(customFilterDate.getFullYear());
-      setPickerMonth(customFilterDate.getMonth());
-      setPickerDay(customFilterDate.getDate());
-    }
-  }, [showDatePicker, customFilterDate]);
+  const startOfDay = (d: Date) => {
+    const copy = new Date(d);
+    copy.setHours(0, 0, 0, 0);
+    return copy;
+  };
+
+  const endOfDay = (d: Date) => {
+    const copy = new Date(d);
+    copy.setHours(23, 59, 59, 999);
+    return copy;
+  };
 
   const walletMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -194,12 +220,18 @@ export default function ReportsScreen() {
       return expenses.filter((e) => e.date.toDate() >= start && e.type === 'expense');
     }
     if (period === 'custom') {
-      return expenses.filter((e) => isSameDay(e.date.toDate(), customFilterDate) && e.type === 'expense');
+      return expenses.filter((e) => {
+        if (e.type !== 'expense') return false;
+        const d = e.date.toDate();
+        if (customFromDate && d < startOfDay(customFromDate)) return false;
+        if (customToDate && d > endOfDay(customToDate)) return false;
+        return true;
+      });
     }
     // Month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return expenses.filter((e) => e.date.toDate() >= start && e.type === 'expense');
-  }, [expenses, period, customFilterDate]);
+  }, [expenses, period, customFromDate, customToDate]);
 
   const income = useMemo(() => {
     if (period === 'today') {
@@ -211,12 +243,18 @@ export default function ReportsScreen() {
       return expenses.filter((e) => e.date.toDate() >= start && e.type === 'income');
     }
     if (period === 'custom') {
-      return expenses.filter((e) => isSameDay(e.date.toDate(), customFilterDate) && e.type === 'income');
+      return expenses.filter((e) => {
+        if (e.type !== 'income') return false;
+        const d = e.date.toDate();
+        if (customFromDate && d < startOfDay(customFromDate)) return false;
+        if (customToDate && d > endOfDay(customToDate)) return false;
+        return true;
+      });
     }
     // Month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return expenses.filter((e) => e.date.toDate() >= start && e.type === 'income');
-  }, [expenses, period, customFilterDate]);
+  }, [expenses, period, customFromDate, customToDate]);
 
   const totalSpent = filtered.reduce((s, e) => s + e.amount, 0);
   const totalIncome = income.reduce((s, e) => s + e.amount, 0);
@@ -257,12 +295,80 @@ export default function ReportsScreen() {
       return expenses.filter((e) => e.date.toDate() >= start);
     }
     if (period === 'custom') {
-      return expenses.filter((e) => isSameDay(e.date.toDate(), customFilterDate));
+      return expenses.filter((e) => {
+        const d = e.date.toDate();
+        if (customFromDate && d < startOfDay(customFromDate)) return false;
+        if (customToDate && d > endOfDay(customToDate)) return false;
+        return true;
+      });
     }
     // Month
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     return expenses.filter((e) => e.date.toDate() >= start);
-  }, [expenses, period, customFilterDate]);
+  }, [expenses, period, customFromDate, customToDate]);
+
+  // Build a quick lookup map from all loaded expenses (for batch delete)
+  const expenseMap = useMemo(() => {
+    const map: Record<string, (typeof expenses)[0]> = {};
+    expenses.forEach((e) => { map[e.id] = e; });
+    return map;
+  }, [expenses]);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleSelectAll = () => {
+    const allIds: Record<string, boolean> = {};
+    allFiltered.forEach((e) => {
+      allIds[e.id] = true;
+    });
+    setSelectedIds(allIds);
+  };
+
+  const handleSelectNone = () => {
+    setSelectedIds({});
+  };
+
+  const handleDeleteSelected = async () => {
+    const idsToDelete = Object.keys(selectedIds).filter((id) => selectedIds[id]);
+    if (idsToDelete.length === 0) return;
+
+    try {
+      const batch = writeBatch(db);
+      for (const id of idsToDelete) {
+        const expense = expenseMap[id];
+        if (!expense) continue;
+
+        if (expense.type === 'transfer') {
+          batch.update(doc(db, 'wallets', expense.walletId), {
+            balance: increment(expense.amount),
+          });
+          if (expense.toWalletId) {
+            batch.update(doc(db, 'wallets', expense.toWalletId), {
+              balance: increment(-expense.amount),
+            });
+          }
+        } else {
+          const delta = expense.type === 'income' ? -expense.amount : expense.amount;
+          batch.update(doc(db, 'wallets', expense.walletId), {
+            balance: increment(delta),
+          });
+        }
+        batch.delete(doc(db, 'expenses', id));
+      }
+
+      await batch.commit();
+      try { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); } catch (e) {}
+      Toast.show({ type: 'success', text1: `${idsToDelete.length} entr${idsToDelete.length > 1 ? 'ies' : 'y'} deleted ✓` });
+      setIsSelectMode(false);
+    } catch (err: any) {
+      Toast.show({ type: 'error', text1: 'Delete failed', text2: err.message });
+    }
+  };
 
   const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay();
@@ -309,7 +415,11 @@ export default function ReportsScreen() {
 
   const handleConfirmDatePicker = () => {
     const newD = new Date(pickerYear, pickerMonth, pickerDay);
-    setCustomFilterDate(newD);
+    if (targetingDate === 'from') {
+      setCustomFromDate(newD);
+    } else {
+      setCustomToDate(newD);
+    }
     setShowDatePicker(false);
   };
 
@@ -338,23 +448,80 @@ export default function ReportsScreen() {
         ))}
       </View>
 
-      {/* Custom Date Selection Row */}
+      {/* Custom Date Selection Row (From & To Optional Ranges) */}
       {period === 'custom' && (
-        <TouchableOpacity 
-          style={styles.customDateSelectRow} 
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Text style={styles.customDateSelectLabel}>Selected Date:</Text>
-          <Text style={styles.customDateSelectValue}>
-            {customFilterDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })} 📅
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.customDateRangeContainer}>
+          <View style={styles.customDateCol}>
+            <Text style={styles.customDateLabel}>FROM</Text>
+            <View style={styles.customDateInputBox}>
+              <TouchableOpacity 
+                style={styles.customDateBtn}
+                onPress={() => {
+                  setTargetingDate('from');
+                  const currentTarget = customFromDate || new Date();
+                  setPickerYear(currentTarget.getFullYear());
+                  setPickerMonth(currentTarget.getMonth());
+                  setPickerDay(currentTarget.getDate());
+                  setShowDatePicker(true);
+                }}
+              >
+                <Text style={[styles.customDateBtnText, !customFromDate && styles.customDatePlaceholder]}>
+                  {customFromDate 
+                    ? customFromDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : 'Any start date'}
+                </Text>
+              </TouchableOpacity>
+              {customFromDate && (
+                <TouchableOpacity onPress={() => setCustomFromDate(null)} style={styles.clearDateBtn}>
+                  <Text style={styles.clearDateText}>×</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.customDateCol}>
+            <Text style={styles.customDateLabel}>TO</Text>
+            <View style={styles.customDateInputBox}>
+              <TouchableOpacity 
+                style={styles.customDateBtn}
+                onPress={() => {
+                  setTargetingDate('to');
+                  const currentTarget = customToDate || new Date();
+                  setPickerYear(currentTarget.getFullYear());
+                  setPickerMonth(currentTarget.getMonth());
+                  setPickerDay(currentTarget.getDate());
+                  setShowDatePicker(true);
+                }}
+              >
+                <Text style={[styles.customDateBtnText, !customToDate && styles.customDatePlaceholder]}>
+                  {customToDate 
+                    ? customToDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                    : 'Any end date'}
+                </Text>
+              </TouchableOpacity>
+              {customToDate && (
+                <TouchableOpacity onPress={() => setCustomToDate(null)} style={styles.clearDateBtn}>
+                  <Text style={styles.clearDateText}>×</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
       )}
 
       {loading ? (
         <ActivityIndicator color={Colors.carbonBlack} style={{ marginTop: 60 }} />
       ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.content,
+            // Extra bottom padding when delete bar is showing so last items aren't hidden
+            isSelectMode && selectedCount > 0 && { paddingBottom: 100 + insets.bottom },
+          ]}
+          showsVerticalScrollIndicator={false}
+          onScroll={tabBarOnScroll}
+          scrollEventThrottle={16}
+        >
           {/* Summary card */}
           <View style={styles.summaryCard}>
             <Text style={styles.summaryLabel}>Total Spent</Text>
@@ -410,7 +577,27 @@ export default function ReportsScreen() {
           {/* All Entries */}
           {allFiltered.length > 0 && (
             <View style={styles.chartCard}>
-              <Text style={styles.chartTitle}>All Entries</Text>
+              <View style={styles.allEntriesHeaderRow}>
+                <Text style={styles.chartTitle}>All Entries</Text>
+                {isSelectMode ? (
+                  <View style={{ flexDirection: 'row', gap: Spacing.sm }}>
+                    <TouchableOpacity onPress={handleSelectAll} style={styles.selectActionBtn}>
+                      <Text style={styles.selectActionBtnText}>All</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleSelectNone} style={styles.selectActionBtn}>
+                      <Text style={styles.selectActionBtnText}>None</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={exitSelectMode} style={[styles.selectActionBtn, styles.selectCancelBtn]}>
+                      <Text style={[styles.selectActionBtnText, { color: Colors.carbonBlack }]}>✕ Cancel</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <TouchableOpacity onPress={() => setIsSelectMode(true)} style={styles.selectActionBtn}>
+                    <Text style={styles.selectActionBtnText}>Select</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
               {allFiltered.map((e) => {
                 const cat = getCategoryDef(e.category);
                 const sourceWalletName = walletMap[e.walletId] ?? 'Wallet';
@@ -440,13 +627,35 @@ export default function ReportsScreen() {
                   ? Colors.mutedStone
                   : Colors.expenseText;
 
+                const isSelected = !!selectedIds[e.id];
+
                 return (
                   <TouchableOpacity
                      key={e.id}
-                     style={styles.entryRow}
-                     onPress={() => router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any)}
+                     style={[styles.entryRow, isSelectMode && styles.entryRowSelectable, isSelected && styles.entryRowSelected]}
+                     onPress={() => {
+                       if (isSelectMode) {
+                         toggleSelect(e.id);
+                       } else {
+                         router.push({ pathname: '/modals/edit-expense', params: { id: e.id } } as any);
+                       }
+                     }}
+                     onLongPress={() => {
+                       try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); } catch (_) {}
+                       if (!isSelectMode) setIsSelectMode(true);
+                       toggleSelect(e.id);
+                     }}
+                     delayLongPress={350}
                      activeOpacity={0.65}
                   >
+                    {isSelectMode && (
+                      <View style={[
+                        styles.rowCheckbox,
+                        isSelected ? styles.rowCheckboxChecked : styles.rowCheckboxUnchecked
+                      ]}>
+                        {isSelected && <Text style={styles.rowCheckmark}>✓</Text>}
+                      </View>
+                    )}
                     <View style={styles.entryIcon}>
                       <Text style={{ fontSize: 18 }}>{cat.emoji}</Text>
                     </View>
@@ -472,6 +681,41 @@ export default function ReportsScreen() {
             </View>
           )}
         </ScrollView>
+      )}
+
+      {/* Floating Delete Bar — pinned to screen bottom, above safe area */}
+      {isSelectMode && (
+        <View style={[styles.bulkDeleteOverlay, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View style={styles.bulkDeleteBar}>
+            {/* Left: count */}
+            <View style={styles.bulkDeleteLeft}>
+              <View style={styles.bulkDeleteBadge}>
+                <Text style={styles.bulkDeleteBadgeText}>{selectedCount}</Text>
+              </View>
+              <Text style={styles.bulkDeleteCount}>
+                {selectedCount === 0 ? 'Tap to select' : `item${selectedCount > 1 ? 's' : ''} selected`}
+              </Text>
+            </View>
+
+            {/* Right: actions */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                onPress={exitSelectMode}
+                style={styles.bulkCancelBtn}
+              >
+                <Text style={styles.bulkCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              {selectedCount > 0 && (
+                <TouchableOpacity
+                  onPress={handleDeleteSelected}
+                  style={styles.bulkDeleteBtn}
+                >
+                  <Text style={styles.bulkDeleteBtnText}>🗑 Delete</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
       )}
 
       {/* Reusable Date Picker Modal (No time select needed for reports filtering) */}
@@ -574,26 +818,57 @@ const styles = StyleSheet.create({
   periodPillText: { ...Typography.bodyMedium, fontSize: FontSize.sm, color: Colors.mutedStone },
   periodPillTextActive: { color: Colors.polarWhite },
   
-  customDateSelectRow: {
+  customDateRangeContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
+    paddingVertical: Spacing.md,
     backgroundColor: Colors.polarWhite,
     borderBottomWidth: 1,
     borderBottomColor: Colors.ghostGray,
     marginBottom: Spacing.base,
   },
-  customDateSelectLabel: {
+  customDateCol: {
+    flex: 1,
+    gap: 4,
+  },
+  customDateLabel: {
+    ...Typography.bodyBold,
+    fontSize: 10,
+    color: Colors.mutedStone,
+    letterSpacing: 0.5,
+  },
+  customDateInputBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.md,
+    height: 40,
+    paddingHorizontal: Spacing.sm,
+  },
+  customDateBtn: {
+    flex: 1,
+    justifyContent: 'center',
+    height: '100%',
+  },
+  customDateBtnText: {
     ...Typography.bodyMedium,
     fontSize: FontSize.sm,
-    color: Colors.mutedStone,
-  },
-  customDateSelectValue: {
-    ...Typography.bodyBold,
-    fontSize: FontSize.sm,
     color: Colors.carbonBlack,
+  },
+  customDatePlaceholder: {
+    color: Colors.softStone,
+  },
+  clearDateBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearDateText: {
+    fontSize: 20,
+    color: Colors.mutedStone,
+    lineHeight: 20,
   },
 
   content: { paddingHorizontal: Spacing.lg, paddingBottom: 100 },
@@ -795,7 +1070,7 @@ const styles = StyleSheet.create({
     marginVertical: 2,
   },
   dayCellSelected: {
-    backgroundColor: '#FF3B30',
+    backgroundColor: Colors.carbonBlack,
   },
   dayCellText: {
     ...Typography.bodyMedium,
@@ -824,4 +1099,122 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   modalAddText: { ...Typography.bodyBold, fontSize: FontSize.base, color: Colors.polarWhite },
+
+  allEntriesHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  selectActionBtn: {
+    backgroundColor: Colors.ghostGray,
+    borderRadius: Radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  selectActionBtnText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.xs,
+    color: Colors.carbonBlack,
+  },
+  
+  bulkDeleteOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.sm,
+    backgroundColor: 'transparent',
+  },
+  bulkDeleteBar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#111111',
+    borderRadius: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  bulkDeleteLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  bulkDeleteBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkDeleteBadgeText: {
+    ...Typography.bodyBold,
+    fontSize: 13,
+    color: '#FFFFFF',
+  },
+  bulkDeleteCount: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: 'rgba(255,255,255,0.75)',
+  },
+  bulkCancelBtn: {
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    borderRadius: Radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  bulkCancelBtnText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  bulkDeleteBtn: {
+    backgroundColor: '#FF3B30',
+    borderRadius: Radius.full,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  bulkDeleteBtnText: {
+    ...Typography.bodyBold,
+    fontSize: FontSize.sm,
+    color: '#FFFFFF',
+  },
+  selectCancelBtn: {
+    backgroundColor: Colors.carbonBlack,
+  },
+  entryRowSelectable: {
+    paddingLeft: Spacing.xs,
+  },
+  entryRowSelected: {
+    backgroundColor: 'rgba(243, 192, 220, 0.25)',
+  },
+  rowCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  rowCheckboxUnchecked: {
+    borderColor: Colors.mutedStone,
+    backgroundColor: 'transparent',
+  },
+  rowCheckboxChecked: {
+    borderColor: Colors.carbonBlack,
+    backgroundColor: Colors.carbonBlack,
+  },
+  rowCheckmark: {
+    color: Colors.polarWhite,
+    fontSize: FontSize.xs,
+    fontWeight: '900',
+  },
 });

@@ -21,6 +21,7 @@ import { exportToExcel } from '../../lib/export';
 import { useExpenses } from '../../hooks/useExpenses';
 import { confirmAction } from '../../lib/confirm';
 import { Wallet } from '../../types/models';
+import { useTabBarVisibility } from '../../context/TabBarVisibilityContext';
 
 function SectionLabel({ label }: { label: string }) {
   return (
@@ -62,6 +63,7 @@ export default function ProfileScreen() {
   const { user, profile } = useAuth();
   const { wallets } = useWallets();
   const { expenses } = useExpenses(1000);
+  const { onScroll } = useTabBarVisibility();
   const displayName = user?.displayName ?? 'User';
   const initials = displayName
     .split(' ')
@@ -231,7 +233,12 @@ export default function ProfileScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <Text style={styles.title}>Profile</Text>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+      >
         {/* User card */}
         <View style={styles.userCard}>
           <View style={styles.avatar}>
